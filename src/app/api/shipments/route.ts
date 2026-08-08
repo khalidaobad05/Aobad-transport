@@ -5,11 +5,10 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const date = searchParams.get('date')
-    const clientId = searchParams.get('clientId')
     const vehicleId = searchParams.get('vehicleId')
     const status = searchParams.get('status')
     const page = parseInt(searchParams.get('page') || '1')
-    const limit = parseInt(searchParams.get('limit') || '20')
+    const limit = parseInt(searchParams.get('limit') || '50')
 
     const where: Record<string, unknown> = {}
 
@@ -21,10 +20,6 @@ export async function GET(request: NextRequest) {
         gte: startDate,
         lt: endDate,
       }
-    }
-
-    if (clientId) {
-      where.clientId = clientId
     }
 
     if (vehicleId) {
@@ -39,8 +34,10 @@ export async function GET(request: NextRequest) {
       db.shipment.findMany({
         where,
         include: {
-          client: true,
           vehicle: true,
+          orders: {
+            include: { client: true },
+          },
         },
         orderBy: { date: 'desc' },
         skip: (page - 1) * limit,
@@ -71,24 +68,37 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const {
-      date,
-      status,
-      packageCount,
-      unitPrice,
-      description,
-      clientId,
-      vehicleId,
-    } = body
+    const { date, status, description, vehicleId, orders } = body
 
-    if (!date || !clientId || !vehicleId) {
+    if (!date || !vehicleId) {
       return NextResponse.json(
-        { message: 'التاريخ ومعرف العميل والمركبة مطلوبون', success: false },
+        { message: 'التاريخ والمركبة مطلوبان', success: false },
         { status: 400 }
       )
     }
 
-    const totalAmount = (packageCount || 0) * (unitPrice || 0)
+    if (!orders || !Array.isArray(orders) || orders.length === 0) {
+      return NextResponse.json(
+        { message: 'يجب إضافة طلبية واحدة على الأقل', success: false },
+        { status: 400 }
+      )
+    }
+
+    // Validate each order
+    for (const order of orders) {
+      if (!order.clientId) {
+        return NextResponse.json(
+          { message: 'كل طلبية يجب أن تحتوي على زبون', success: false },
+          { status: 400 }
+        )
+      }
+      if (!order.packageCount || order.packageCount <= 0) {
+        return NextResponse.json(
+          { message: 'عدد الطرود مطلوب لكل طلبية', success: false },
+          { status: 400 }
+        )
+      }
+    }
 
     // Generate next number
     const lastShipment = await db.shipment.findFirst({
@@ -101,14 +111,20 @@ export async function POST(request: NextRequest) {
         number: nextNumber,
         date: new Date(date),
         status: status || 'قيد التوصيل',
-        packageCount: packageCount || 0,
-        unitPrice: unitPrice || 0,
-        totalAmount,
         description: description || null,
-        clientId,
         vehicleId,
+        orders: {
+          create: orders.map((o: { clientId: string; packageCount: number; description?: string }) => ({
+            clientId: o.clientId,
+            packageCount: o.packageCount,
+            description: o.description || null,
+          })),
+        },
       },
-      include: { client: true, vehicle: true },
+      include: {
+        vehicle: true,
+        orders: { include: { client: true } },
+      },
     })
 
     return NextResponse.json({ data: shipment, success: true }, { status: 201 })

@@ -13,21 +13,21 @@ model Client {
   name      String
   phone     String?
   address   String?
-  ifu       String?   // Numéro IFU (Identifiant Fiscal Unique)
-  ice       String?   // Identifiant Commun des Entreprises
-  rc        String?   // Registre de Commerce
+  ifu       String?
+  ice       String?
+  rc        String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  shipments Shipment[]
-  invoices  Invoice[]
+  orders   Order[]
+  invoices Invoice[]
 }
 
 model Vehicle {
   id           String   @id @default(cuid())
-  registration String   @unique // رقم التسجيل
-  driverName   String   // اسم السائق
-  ownerName    String   // اسم صاحب المركبة / الشريك
+  registration String   @unique
+  driverName   String
+  ownerName    String
   phone        String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -36,33 +36,46 @@ model Vehicle {
   expenses  Expense[]
 }
 
+// Shipment = a trip made by a vehicle on a given date
+// Contains multiple orders for different customers
 model Shipment {
   id          String   @id @default(cuid())
-  number      Int      @unique // رقم الشحنة
-  date        DateTime // التاريخ
-  status      String   @default("قيد التوصيل") // حالة الشحنة
-  packageCount Int     @default(0) // عدد الطرود
-  unitPrice   Float    @default(0) // سعر الطرد
-  totalAmount Float    @default(0) // المبلغ الإجمالي
-  description String?  // وصف الشحنة
+  number      Int      @unique
+  date        DateTime
+  status      String   @default("قيد التوصيل")
+  description String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  clientId   String
-  client     Client  @relation(fields: [clientId], references: [id])
-  vehicleId  String
-  vehicle    Vehicle @relation(fields: [vehicleId], references: [id])
+  vehicleId String
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id])
 
+  orders   Order[]
   expenses Expense[]
+}
+
+// Order = individual customer delivery within a shipment
+model Order {
+  id           String   @id @default(cuid())
+  packageCount Int      @default(0)
+  description  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  shipmentId String
+  shipment   Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id])
 }
 
 model Expense {
   id          String   @id @default(cuid())
-  number      String   @unique // رقم المصروف EXP-001
-  date        DateTime // تاريخ المصروف
-  type        String   // نوع المصروف (وقود، رسوم طريق، صيانة...)
-  amount      Float    // المبلغ
-  notes       String?  // ملاحظات
+  number      String   @unique
+  date        DateTime
+  type        String
+  amount      Float
+  notes       String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -74,17 +87,17 @@ model Expense {
 
 model Invoice {
   id              String   @id @default(cuid())
-  number          String   @unique // رقم الفاتورة
-  date            DateTime // تاريخ الفاتورة
-  paymentMethod   String   @default("نقدي") // طريقة الدفع
-  htAmount        Float    @default(0) // المبلغ HT
-  tvaRate         Float    @default(20) // نسبة TVA
-  tvaAmount       Float    @default(0) // مبلغ TVA
-  taxeProfRate    Float    @default(0) // نسبة الضريبة المهنية
-  taxeProfAmount  Float    @default(0) // مبلغ الضريبة المهنية
-  ttcAmount       Float    @default(0) // المبلغ TTC
-  timbreFiscal    Float    @default(0) // Timbre fiscal
-  status          String   @default("غير مدفوعة") // حالة الفاتورة
+  number          String   @unique
+  date            DateTime
+  paymentMethod   String   @default("نقدي")
+  htAmount        Float    @default(0)
+  tvaRate         Float    @default(20)
+  tvaAmount       Float    @default(0)
+  taxeProfRate    Float    @default(0)
+  taxeProfAmount  Float    @default(0)
+  ttcAmount       Float    @default(0)
+  timbreFiscal    Float    @default(0)
+  status          String   @default("غير مدفوعة")
   notes           String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

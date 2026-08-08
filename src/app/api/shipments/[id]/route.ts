@@ -10,8 +10,8 @@ export async function GET(
     const shipment = await db.shipment.findUnique({
       where: { id },
       include: {
-        client: true,
         vehicle: true,
+        orders: { include: { client: true } },
         expenses: true,
       },
     })
@@ -40,34 +40,47 @@ export async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const {
-      date,
-      status,
-      packageCount,
-      unitPrice,
-      description,
-      clientId,
-      vehicleId,
-    } = body
-
-    const totalAmount = (packageCount || 0) * (unitPrice || 0)
+    const { date, status, description, vehicleId, orders } = body
 
     const shipment = await db.shipment.update({
       where: { id },
       data: {
         date: date ? new Date(date) : undefined,
         status,
-        packageCount,
-        unitPrice,
-        totalAmount,
         description: description || null,
-        clientId,
         vehicleId,
       },
-      include: { client: true, vehicle: true },
+      include: {
+        vehicle: true,
+        orders: { include: { client: true } },
+      },
     })
 
-    return NextResponse.json({ data: shipment, success: true })
+    // Handle order updates if provided
+    if (orders && Array.isArray(orders)) {
+      // Delete existing orders and recreate
+      await db.order.deleteMany({ where: { shipmentId: id } })
+      for (const o of orders) {
+        if (o.clientId && o.packageCount > 0) {
+          await db.order.create({
+            data: {
+              shipmentId: id,
+              clientId: o.clientId,
+              packageCount: o.packageCount,
+              description: o.description || null,
+            },
+          })
+        }
+      }
+    }
+
+    // Re-fetch with updated orders
+    const updated = await db.shipment.findUnique({
+      where: { id },
+      include: { vehicle: true, orders: { include: { client: true } } },
+    })
+
+    return NextResponse.json({ data: updated, success: true })
   } catch (error) {
     console.error('خطأ في تحديث الشحنة:', error)
     return NextResponse.json(

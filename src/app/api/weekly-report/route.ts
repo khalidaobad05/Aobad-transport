@@ -28,7 +28,10 @@ export async function GET(request: NextRequest) {
       where: {
         date: { gte: startDate, lt: endDate },
       },
-      include: { vehicle: true, client: true },
+      include: {
+        vehicle: true,
+        orders: { include: { client: true } },
+      },
     })
 
     // Get all expenses in the date range
@@ -40,70 +43,81 @@ export async function GET(request: NextRequest) {
     })
 
     // Group by owner (partner)
-    const ownerMap = new Map<string, {
+    const PARTNER_NAMES = [
+      'أحمد عباد',
+      'رشيد عباد',
+      'عبد اللطيف عباد',
+      'عبد المجيد عباد',
+    ]
+
+    const partnerMap = new Map<string, {
       ownerName: string
       vehicles: { id: string; registration: string; driverName: string }[]
       shipmentCount: number
-      totalIncome: number
+      orderCount: number
+      totalPackages: number
       totalExpenses: number
     }>()
 
-    for (const vehicle of vehicles) {
-      const owner = vehicle.ownerName || vehicle.driverName
-      if (!ownerMap.has(owner)) {
-        ownerMap.set(owner, {
-          ownerName: owner,
-          vehicles: [],
-          shipmentCount: 0,
-          totalIncome: 0,
-          totalExpenses: 0,
-        })
-      }
-      const entry = ownerMap.get(owner)!
-      entry.vehicles.push({
-        id: vehicle.id,
-        registration: vehicle.registration,
-        driverName: vehicle.driverName,
+    // Initialize all 4 partners
+    for (const name of PARTNER_NAMES) {
+      partnerMap.set(name, {
+        ownerName: name,
+        vehicles: [],
+        shipmentCount: 0,
+        orderCount: 0,
+        totalPackages: 0,
+        totalExpenses: 0,
       })
     }
 
-    // Accumulate shipments per owner
-    for (const shipment of shipments) {
-      const vehicle = vehicles.find((v) => v.id === shipment.vehicleId)
-      if (!vehicle) continue
-      const owner = vehicle.ownerName || vehicle.driverName
-      const entry = ownerMap.get(owner)
+    // Map vehicles to partners
+    for (const vehicle of vehicles) {
+      const owner = vehicle.ownerName
+      const entry = partnerMap.get(owner)
       if (entry) {
-        entry.shipmentCount++
-        entry.totalIncome += shipment.totalAmount
+        entry.vehicles.push({
+          id: vehicle.id,
+          registration: vehicle.registration,
+          driverName: vehicle.driverName,
+        })
       }
     }
 
-    // Accumulate expenses per owner
+    // Accumulate shipments and orders per partner
+    for (const shipment of shipments) {
+      const owner = shipment.vehicle.ownerName
+      const entry = partnerMap.get(owner)
+      if (entry) {
+        entry.shipmentCount++
+        entry.orderCount += shipment.orders.length
+        entry.totalPackages += shipment.orders.reduce((s, o) => s + o.packageCount, 0)
+      }
+    }
+
+    // Accumulate expenses per partner
     for (const expense of expenses) {
-      const vehicle = vehicles.find((v) => v.id === expense.vehicleId)
-      if (!vehicle) continue
-      const owner = vehicle.ownerName || vehicle.driverName
-      const entry = ownerMap.get(owner)
+      const owner = expense.vehicle.ownerName
+      const entry = partnerMap.get(owner)
       if (entry) {
         entry.totalExpenses += expense.amount
       }
     }
 
-    // Build partner reports
-    const partnerReports = Array.from(ownerMap.values()).map((entry) => ({
+    const partnerReports = Array.from(partnerMap.values()).map((entry) => ({
       ownerName: entry.ownerName,
       vehicles: entry.vehicles,
       shipmentCount: entry.shipmentCount,
-      totalIncome: entry.totalIncome,
+      orderCount: entry.orderCount,
+      totalPackages: entry.totalPackages,
       totalExpenses: entry.totalExpenses,
-      netProfit: entry.totalIncome - entry.totalExpenses,
     }))
 
     // Totals
-    const totalIncome = shipments.reduce((sum, s) => sum + s.totalAmount, 0)
-    const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0)
-    const totalNetProfit = totalIncome - totalExpenses
+    const totalShipments = shipments.length
+    const totalOrders = shipments.reduce((s, sh) => s + sh.orders.length, 0)
+    const totalPackages = shipments.reduce((s, sh) => s + sh.orders.reduce((ss, o) => ss + o.packageCount, 0), 0)
+    const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0)
 
     return NextResponse.json({
       data: {
@@ -111,11 +125,11 @@ export async function GET(request: NextRequest) {
         endDate: endDateStr,
         partnerReports,
         summary: {
-          totalShipments: shipments.length,
+          totalShipments,
+          totalOrders,
+          totalPackages,
           totalExpensesCount: expenses.length,
-          totalIncome,
           totalExpenses,
-          totalNetProfit,
         },
       },
       success: true,

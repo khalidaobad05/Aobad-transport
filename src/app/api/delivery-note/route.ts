@@ -29,60 +29,29 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Get all shipments for this client on this date
+    // Get all orders for this client on this date (across all shipments)
     const startDate = new Date(date)
     const endDate = new Date(date)
     endDate.setDate(endDate.getDate() + 1)
 
-    const shipments = await db.shipment.findMany({
+    const orders = await db.order.findMany({
       where: {
         clientId,
-        date: {
-          gte: startDate,
-          lt: endDate,
+        shipment: {
+          date: {
+            gte: startDate,
+            lt: endDate,
+          },
         },
       },
       include: {
-        vehicle: true,
+        shipment: {
+          include: { vehicle: true },
+        },
       },
-      orderBy: { number: 'asc' },
     })
 
-    // Group shipments by vehicle
-    const groupedByVehicle: Record<
-      string,
-      {
-        vehicle: typeof shipments[0]['vehicle']
-        shipments: (typeof shipments)[0][]
-        totalPackages: number
-        totalAmount: number
-      }
-    > = {}
-
-    let totalPackages = 0
-    let totalAmount = 0
-
-    for (const shipment of shipments) {
-      const vid = shipment.vehicleId
-
-      if (!groupedByVehicle[vid]) {
-        groupedByVehicle[vid] = {
-          vehicle: shipment.vehicle,
-          shipments: [],
-          totalPackages: 0,
-          totalAmount: 0,
-        }
-      }
-
-      groupedByVehicle[vid].shipments.push(shipment)
-      groupedByVehicle[vid].totalPackages += shipment.packageCount
-      groupedByVehicle[vid].totalAmount += shipment.totalAmount
-
-      totalPackages += shipment.packageCount
-      totalAmount += shipment.totalAmount
-    }
-
-    const vehicleGroups = Object.values(groupedByVehicle)
+    const totalPackages = orders.reduce((sum, o) => sum + o.packageCount, 0)
 
     return NextResponse.json({
       data: {
@@ -90,16 +59,9 @@ export async function GET(request: NextRequest) {
         client: {
           id: client.id,
           name: client.name,
-          phone: client.phone,
-          address: client.address,
-          ifu: client.ifu,
-          ice: client.ice,
-          rc: client.rc,
         },
-        vehicleGroups,
         totalPackages,
-        totalAmount,
-        shipmentCount: shipments.length,
+        orderCount: orders.length,
       },
       success: true,
     })

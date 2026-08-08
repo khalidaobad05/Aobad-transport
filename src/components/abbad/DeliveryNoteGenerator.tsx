@@ -20,26 +20,11 @@ interface Client {
   name: string;
 }
 
-interface ShipmentInfo {
-  number: number;
-  packageCount: number;
-  vehicle: { registration: string; driverName: string; ownerName: string };
-}
-
-interface VehicleGroup {
-  vehicle: { registration: string; driverName: string; ownerName: string };
-  shipments: ShipmentInfo[];
-  totalPackages: number;
-  totalAmount: number;
-}
-
 interface DeliveryNoteData {
   date: string;
-  client: Client;
-  vehicleGroups: VehicleGroup[];
+  client: { id: string; name: string };
   totalPackages: number;
-  totalAmount: number;
-  shipmentCount: number;
+  orderCount: number;
 }
 
 function formatDate(dateStr: string): string {
@@ -174,7 +159,7 @@ export default function DeliveryNoteGenerator() {
           <div
             id="delivery-note-print"
             className="border-2 border-gray-400 p-10 bg-white"
-            style={{ maxWidth: '700px', margin: '0 auto' }}
+            style={{ maxWidth: '600px', margin: '0 auto' }}
           >
             {/* Company Header */}
             <div className="text-center mb-10">
@@ -185,78 +170,39 @@ export default function DeliveryNoteGenerator() {
             </div>
 
             {/* Title */}
-            <div className="text-center mb-8">
-              <h2 className="text-xl font-bold text-gray-800 underline underline-offset-4">
+            <div className="text-center mb-10">
+              <h2 className="text-2xl font-bold text-gray-800 underline underline-offset-4">
                 وصل تسليم
               </h2>
             </div>
 
-            {/* Client & Date Info - Simple */}
-            <div className="mb-8 space-y-3 text-base">
+            {/* Simple Info */}
+            <div className="mb-10 space-y-4 text-lg">
               <div className="flex gap-4">
-                <span className="font-bold text-gray-700 min-w-[100px]">التاريخ:</span>
+                <span className="font-bold text-gray-700 min-w-[120px]">التاريخ:</span>
                 <span className="text-gray-900">{formatDate(noteData.date)}</span>
               </div>
               <div className="flex gap-4">
-                <span className="font-bold text-gray-700 min-w-[100px]">اسم الزبون:</span>
+                <span className="font-bold text-gray-700 min-w-[120px]">اسم الزبون:</span>
                 <span className="text-gray-900 font-semibold">{noteData.client.name}</span>
               </div>
-            </div>
-
-            {/* Shipments detail per vehicle */}
-            <div className="mb-8">
-              <table className="w-full text-sm border-collapse">
-                <thead>
-                  <tr className="bg-gray-100">
-                    <th className="border border-gray-400 px-3 py-2 font-bold text-gray-700">م</th>
-                    <th className="border border-gray-400 px-3 py-2 font-bold text-gray-700">المركبة</th>
-                    <th className="border border-gray-400 px-3 py-2 font-bold text-gray-700">السائق</th>
-                    <th className="border border-gray-400 px-3 py-2 font-bold text-gray-700 text-center">عدد الطلبيات</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {noteData.vehicleGroups.map((group, gi) => (
-                    <tr key={gi}>
-                      <td className="border border-gray-400 px-3 py-2 text-center">{gi + 1}</td>
-                      <td className="border border-gray-400 px-3 py-2">{group.vehicle.registration}</td>
-                      <td className="border border-gray-400 px-3 py-2">{group.vehicle.driverName}</td>
-                      <td className="border border-gray-400 px-3 py-2 text-center font-bold text-lg">
-                        {group.totalPackages}
-                      </td>
-                    </tr>
-                  ))}
-                  {noteData.vehicleGroups.length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="border border-gray-400 px-3 py-6 text-center text-gray-500">
-                        لا توجد شحنات في هذا اليوم
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-gray-100 font-bold">
-                    <td colSpan={3} className="border border-gray-400 px-3 py-2 text-left">
-                      المجموع الكلي للطلبيات:
-                    </td>
-                    <td className="border border-gray-400 px-3 py-2 text-center text-xl">
-                      {noteData.totalPackages}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
+              <div className="flex gap-4">
+                <span className="font-bold text-gray-700 min-w-[120px]">عدد الطلبيات:</span>
+                <span className="text-gray-900 font-bold text-xl">{noteData.totalPackages}</span>
+              </div>
             </div>
 
             {/* Empty amount field for manual filling */}
-            <div className="mb-10 flex items-center gap-4 text-base">
-              <span className="font-bold text-gray-700 min-w-[180px]">المبلغ الواجب أدائه:</span>
-              <div className="border-b-2 border-dotted border-gray-400 flex-1 pb-1" style={{ minHeight: '30px' }}>
+            <div className="mb-12 flex items-center gap-4 text-lg">
+              <span className="font-bold text-gray-700 min-w-[200px]">المبلغ الواجب أدائه:</span>
+              <div className="border-b-2 border-dotted border-gray-400 flex-1 pb-1" style={{ minHeight: '35px' }}>
                 {/* فارغ - يملأ يدوياً */}
               </div>
-              <span className="text-gray-500 text-sm">د.م.</span>
+              <span className="text-gray-500">د.م.</span>
             </div>
 
             {/* Signature Lines */}
-            <div className="grid grid-cols-2 gap-12 mt-16">
+            <div className="grid grid-cols-2 gap-12 mt-20">
               <div className="text-center">
                 <p className="font-bold text-gray-700 mb-3">توقيع الزبون</p>
                 <div className="border-b-2 border-gray-400 pb-1">&nbsp;</div>

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { BarChart3, Loader2, TrendingUp, TrendingDown, ChevronDown, ChevronUp } from 'lucide-react';
+import { BarChart3, Loader2, ChevronDown, ChevronUp, Package, Truck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -27,17 +27,17 @@ interface PartnerReport {
   ownerName: string;
   vehicles: VehicleInfo[];
   shipmentCount: number;
-  totalIncome: number;
+  orderCount: number;
+  totalPackages: number;
   totalExpenses: number;
-  netProfit: number;
 }
 
 interface ReportSummary {
   totalShipments: number;
+  totalOrders: number;
+  totalPackages: number;
   totalExpensesCount: number;
-  totalIncome: number;
   totalExpenses: number;
-  totalNetProfit: number;
 }
 
 interface ReportData {
@@ -124,35 +124,30 @@ export default function WeeklyReport() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Card className="bg-white dark:bg-gray-900 border shadow-sm">
               <CardContent className="p-4">
-                <p className="text-sm text-muted-foreground">إجمالي المداخيل</p>
-                <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-                  {formatCurrency(report.summary.totalIncome)}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">{report.summary.totalShipments} رحلة</p>
+                <div className="flex items-center gap-2 mb-1">
+                  <Truck className="size-4 text-amber-500" />
+                  <p className="text-sm text-muted-foreground">إجمالي الرحلات</p>
+                </div>
+                <p className="text-2xl font-bold">{report.summary.totalShipments}</p>
+                <p className="text-xs text-muted-foreground mt-1">{report.summary.totalOrders} طلبية</p>
               </CardContent>
             </Card>
             <Card className="bg-white dark:bg-gray-900 border shadow-sm">
               <CardContent className="p-4">
-                <p className="text-sm text-muted-foreground">إجمالي المصاريف</p>
+                <div className="flex items-center gap-2 mb-1">
+                  <Package className="size-4 text-blue-500" />
+                  <p className="text-sm text-muted-foreground">إجمالي الطرود</p>
+                </div>
+                <p className="text-2xl font-bold">{report.summary.totalPackages}</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-white dark:bg-gray-900 border shadow-sm">
+              <CardContent className="p-4">
+                <p className="text-sm text-muted-foreground mb-1">إجمالي المصاريف</p>
                 <p className="text-2xl font-bold text-red-600 dark:text-red-400">
                   {formatCurrency(report.summary.totalExpenses)}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">{report.summary.totalExpensesCount} مصروف</p>
-              </CardContent>
-            </Card>
-            <Card className="bg-white dark:bg-gray-900 border shadow-sm">
-              <CardContent className="p-4">
-                <p className="text-sm text-muted-foreground">صافي الربح</p>
-                <div className="flex items-center gap-2">
-                  {report.summary.totalNetProfit >= 0 ? (
-                    <TrendingUp className="size-5 text-emerald-500" />
-                  ) : (
-                    <TrendingDown className="size-5 text-red-500" />
-                  )}
-                  <p className={`text-2xl font-bold ${report.summary.totalNetProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
-                    {formatCurrency(report.summary.totalNetProfit)}
-                  </p>
-                </div>
               </CardContent>
             </Card>
           </div>
@@ -170,9 +165,9 @@ export default function WeeklyReport() {
                       <TableHead>الشريك</TableHead>
                       <TableHead>المركبات</TableHead>
                       <TableHead className="text-center">عدد الرحلات</TableHead>
-                      <TableHead>المداخيل</TableHead>
+                      <TableHead className="text-center">عدد الطلبيات</TableHead>
+                      <TableHead className="text-center">إجمالي الطرود</TableHead>
                       <TableHead>المصاريف</TableHead>
-                      <TableHead>الربح الصافي</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -193,36 +188,27 @@ export default function WeeklyReport() {
                             </TableCell>
                             <TableCell>
                               <span className="text-muted-foreground text-sm">
-                                {pr.vehicles.map((v) => v.registration).join('، ')}
+                                {pr.vehicles.map((v) => v.registration).join('، ') || '—'}
                               </span>
                             </TableCell>
                             <TableCell className="text-center font-semibold">{pr.shipmentCount}</TableCell>
-                            <TableCell className="text-emerald-600 dark:text-emerald-400">{formatCurrency(pr.totalIncome)}</TableCell>
+                            <TableCell className="text-center font-semibold">{pr.orderCount}</TableCell>
+                            <TableCell className="text-center font-bold text-lg">{pr.totalPackages}</TableCell>
                             <TableCell className="text-red-600 dark:text-red-400">{formatCurrency(pr.totalExpenses)}</TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-1">
-                                {pr.netProfit >= 0 ? (
-                                  <TrendingUp className="size-3 text-emerald-500" />
-                                ) : (
-                                  <TrendingDown className="size-3 text-red-500" />
-                                )}
-                                <span className={`font-semibold ${pr.netProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
-                                  {formatCurrency(pr.netProfit)}
-                                </span>
-                              </div>
-                            </TableCell>
                           </TableRow>
                           {/* Expanded: show vehicles detail */}
                           {isExpanded && (
                             <TableRow key={`${pr.ownerName}-detail`}>
                               <TableCell colSpan={6} className="bg-amber-50/30 dark:bg-amber-900/10 px-8 py-3">
                                 <div className="text-sm space-y-1">
-                                  {pr.vehicles.map((v) => (
+                                  {pr.vehicles.length > 0 ? pr.vehicles.map((v) => (
                                     <div key={v.id} className="flex items-center gap-3">
                                       <Badge variant="outline" className="font-mono text-xs">{v.registration}</Badge>
                                       <span className="text-muted-foreground">السائق: {v.driverName}</span>
                                     </div>
-                                  ))}
+                                  )) : (
+                                    <p className="text-muted-foreground">لا توجد مركبات مسجلة لهذا الشريك</p>
+                                  )}
                                 </div>
                               </TableCell>
                             </TableRow>
@@ -236,20 +222,9 @@ export default function WeeklyReport() {
                       <TableCell>المجموع</TableCell>
                       <TableCell>—</TableCell>
                       <TableCell className="text-center">{report.summary.totalShipments}</TableCell>
-                      <TableCell className="text-emerald-600 dark:text-emerald-400">{formatCurrency(report.summary.totalIncome)}</TableCell>
+                      <TableCell className="text-center">{report.summary.totalOrders}</TableCell>
+                      <TableCell className="text-center text-xl">{report.summary.totalPackages}</TableCell>
                       <TableCell className="text-red-600 dark:text-red-400">{formatCurrency(report.summary.totalExpenses)}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          {report.summary.totalNetProfit >= 0 ? (
-                            <TrendingUp className="size-3 text-emerald-500" />
-                          ) : (
-                            <TrendingDown className="size-3 text-red-500" />
-                          )}
-                          <span className={`text-lg ${report.summary.totalNetProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
-                            {formatCurrency(report.summary.totalNetProfit)}
-                          </span>
-                        </div>
-                      </TableCell>
                     </TableRow>
                   </tfoot>
                 </Table>

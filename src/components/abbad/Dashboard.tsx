@@ -1,10 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Truck, Banknote, Users, Car, Loader2 } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
-import { format, parseISO } from 'date-fns';
-import { ar } from 'date-fns/locale';
+import { Truck, Package, Users, Car, Loader2 } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
+import { parseISO } from 'date-fns';
 import {
   Card,
   CardContent,
@@ -29,9 +28,11 @@ import {
 
 type ShipmentStatus = 'تم التسليم' | 'قيد التوصيل' | 'ملغاة';
 
-interface RevenueDay {
-  date: string;
-  revenue: number;
+interface OrderInfo {
+  id: string;
+  packageCount: number;
+  description: string | null;
+  client: { name: string };
 }
 
 interface RecentShipment {
@@ -39,21 +40,28 @@ interface RecentShipment {
   number: number;
   date: string;
   status: string;
-  packageCount: number;
-  totalAmount: number;
-  client: { name: string };
-  vehicle: { driverName: string };
+  description: string | null;
+  vehicle: { registration: string; driverName: string; ownerName: string };
+  orders: OrderInfo[];
+}
+
+interface OrdersDay {
+  date: string;
+  orders: number;
+  packages: number;
 }
 
 interface DashboardData {
   shipmentsToday: number;
-  revenueToday: number;
+  ordersToday: number;
+  packagesToday: number;
   shipmentsWeek: number;
-  revenueWeek: number;
+  ordersWeek: number;
+  packagesWeek: number;
   clientsCount: number;
   vehiclesCount: number;
   recentShipments: RecentShipment[];
-  revenueByDay: RevenueDay[];
+  ordersByDay: OrdersDay[];
 }
 
 const ARABIC_DAYS = [
@@ -66,10 +74,6 @@ const ARABIC_DAYS = [
   'السبت',
 ];
 
-function formatCurrency(amount: number): string {
-  return `${amount.toLocaleString('ar-MA')} د.م.`;
-}
-
 function formatArabicDay(dateStr: string): string {
   try {
     const dayOfWeek = parseISO(dateStr).getDay();
@@ -81,7 +85,11 @@ function formatArabicDay(dateStr: string): string {
 
 function formatDate(dateStr: string): string {
   try {
-    return format(parseISO(dateStr), 'yyyy/MM/dd');
+    const d = new Date(dateStr);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}/${m}/${day}`;
   } catch {
     return dateStr;
   }
@@ -113,8 +121,8 @@ function getStatusBadge(status: ShipmentStatus) {
 }
 
 const chartConfig = {
-  revenue: {
-    label: 'الإيرادات',
+  packages: {
+    label: 'الطرود',
     color: 'var(--color-amber-500)',
   },
 };
@@ -126,6 +134,7 @@ function StatCard({
   color,
   bgColor,
   loading,
+  subtitle,
 }: {
   title: string;
   value: string;
@@ -133,6 +142,7 @@ function StatCard({
   color: string;
   bgColor: string;
   loading: boolean;
+  subtitle?: string;
 }) {
   return (
     <Card className="bg-white dark:bg-gray-900 border shadow-sm">
@@ -144,6 +154,9 @@ function StatCard({
               <Skeleton className="h-8 w-28" />
             ) : (
               <p className={`text-2xl font-bold ${color}`}>{value}</p>
+            )}
+            {subtitle && !loading && (
+              <p className="text-xs text-muted-foreground">{subtitle}</p>
             )}
           </div>
           <div className={`rounded-xl p-3 ${bgColor}`}>
@@ -180,7 +193,7 @@ export default function Dashboard() {
     fetchDashboard();
   }, []);
 
-  const chartData = data?.revenueByDay?.map((d) => ({
+  const chartData = data?.ordersByDay?.map((d) => ({
     ...d,
     dayName: formatArabicDay(d.date),
   })) ?? [];
@@ -204,43 +217,65 @@ export default function Dashboard() {
       {/* Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
-          title="شحنات اليوم"
+          title="رحلات اليوم"
           value={data?.shipmentsToday?.toLocaleString('ar-MA') ?? '---'}
           icon={Truck}
           color="text-amber-600"
           bgColor="bg-amber-100 dark:bg-amber-900/30"
           loading={loading}
+          subtitle={`${data?.ordersToday ?? 0} طلبية`}
         />
         <StatCard
-          title="إيرادات اليوم"
-          value={formatCurrency(data?.revenueToday ?? 0)}
-          icon={Banknote}
+          title="طرود اليوم"
+          value={data?.packagesToday?.toLocaleString('ar-MA') ?? '---'}
+          icon={Package}
           color="text-orange-600"
           bgColor="bg-orange-100 dark:bg-orange-900/30"
           loading={loading}
         />
         <StatCard
-          title="شحنات الأسبوع"
+          title="رحلات الأسبوع"
           value={data?.shipmentsWeek?.toLocaleString('ar-MA') ?? '---'}
-          icon={Users}
+          icon={Car}
           color="text-teal-600"
           bgColor="bg-teal-100 dark:bg-teal-900/30"
           loading={loading}
+          subtitle={`${data?.ordersWeek ?? 0} طلبية`}
         />
         <StatCard
-          title="إيرادات الأسبوع"
-          value={formatCurrency(data?.revenueWeek ?? 0)}
-          icon={Car}
+          title="طرود الأسبوع"
+          value={data?.packagesWeek?.toLocaleString('ar-MA') ?? '---'}
+          icon={Package}
           color="text-emerald-600"
           bgColor="bg-emerald-100 dark:bg-emerald-900/30"
           loading={loading}
         />
       </div>
 
-      {/* Revenue Chart */}
+      {/* Quick info row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <StatCard
+          title="العملاء"
+          value={data?.clientsCount?.toLocaleString('ar-MA') ?? '---'}
+          icon={Users}
+          color="text-blue-600"
+          bgColor="bg-blue-100 dark:bg-blue-900/30"
+          loading={loading}
+        />
+        <StatCard
+          title="المركبات"
+          value={data?.vehiclesCount?.toLocaleString('ar-MA') ?? '---'}
+          icon={Car}
+          color="text-purple-600"
+          bgColor="bg-purple-100 dark:bg-purple-900/30"
+          loading={loading}
+        />
+      </div>
+
+      {/* Packages Chart */}
       <Card className="bg-white dark:bg-gray-900 border shadow-sm">
         <CardHeader>
-          <CardTitle className="text-lg font-semibold">إيرادات آخر ٧ أيام</CardTitle>
+          <CardTitle className="text-lg font-semibold">الطرود في آخر ٧ أيام</CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -265,13 +300,13 @@ export default function Dashboard() {
                   content={
                     <ChartTooltipContent
                       formatter={(value: number) =>
-                        formatCurrency(value)
+                        value.toLocaleString('ar-MA') + ' طرد'
                       }
                     />
                   }
                 />
                 <Bar
-                  dataKey="revenue"
+                  dataKey="packages"
                   fill="var(--color-amber-500)"
                   radius={[6, 6, 0, 0]}
                   maxBarSize={50}
@@ -289,7 +324,7 @@ export default function Dashboard() {
       {/* Recent Shipments Table */}
       <Card className="bg-white dark:bg-gray-900 border shadow-sm">
         <CardHeader>
-          <CardTitle className="text-lg font-semibold">آخر الشحنات</CardTitle>
+          <CardTitle className="text-lg font-semibold">آخر الرحلات</CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -303,37 +338,45 @@ export default function Dashboard() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>رقم الشحنة</TableHead>
+                    <TableHead>رقم الرحلة</TableHead>
                     <TableHead>التاريخ</TableHead>
-                    <TableHead>الزبون</TableHead>
-                    <TableHead>السائق</TableHead>
-                    <TableHead>عدد الطرود</TableHead>
-                    <TableHead>المبلغ</TableHead>
+                    <TableHead>المركبة</TableHead>
+                    <TableHead>الصاحب</TableHead>
+                    <TableHead>الطلبيات</TableHead>
+                    <TableHead>الطرود</TableHead>
                     <TableHead>الحالة</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {data.recentShipments.map((shipment) => (
-                    <TableRow key={shipment.id}>
-                      <TableCell className="font-medium">
-                        {shipment.number.toLocaleString('ar-MA')}
-                      </TableCell>
-                      <TableCell>{formatDate(shipment.date)}</TableCell>
-                      <TableCell>{shipment.client?.name || '—'}</TableCell>
-                      <TableCell>{shipment.vehicle?.driverName || '—'}</TableCell>
-                      <TableCell>
-                        {shipment.packageCount.toLocaleString('ar-MA')}
-                      </TableCell>
-                      <TableCell>{formatCurrency(shipment.totalAmount)}</TableCell>
-                      <TableCell>{getStatusBadge(shipment.status as ShipmentStatus)}</TableCell>
-                    </TableRow>
-                  ))}
+                  {data.recentShipments.map((shipment) => {
+                    const totalPkgs = shipment.orders.reduce((s, o) => s + o.packageCount, 0);
+                    const clientNames = shipment.orders.map((o) => o.client.name).join('، ');
+                    return (
+                      <TableRow key={shipment.id}>
+                        <TableCell className="font-medium">
+                          {shipment.number.toLocaleString('ar-MA')}
+                        </TableCell>
+                        <TableCell>{formatDate(shipment.date)}</TableCell>
+                        <TableCell>{shipment.vehicle?.registration || '—'}</TableCell>
+                        <TableCell>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                            {shipment.vehicle?.ownerName || '—'}
+                          </span>
+                        </TableCell>
+                        <TableCell className="max-w-[200px] truncate" title={clientNames}>
+                          {shipment.orders.length} ({clientNames})
+                        </TableCell>
+                        <TableCell className="font-bold">{totalPkgs}</TableCell>
+                        <TableCell>{getStatusBadge(shipment.status as ShipmentStatus)}</TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
           ) : (
             <div className="flex items-center justify-center h-[200px] text-muted-foreground">
-              لا توجد شحنات حديثة
+              لا توجد رحلات حديثة
             </div>
           )}
         </CardContent>

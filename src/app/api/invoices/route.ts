@@ -44,14 +44,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Calculate htAmount from shipments or use manual value
-    let htAmount = bodyHtAmount || 0
-    if (shipmentIds && shipmentIds.length > 0) {
-      const shipments = await db.shipment.findMany({
-        where: { id: { in: shipmentIds } },
-      })
-      htAmount = shipments.reduce((sum, s) => sum + s.totalAmount, 0)
-    }
+    // Use manual htAmount value (pricing is handled manually)
 
     const tvRate = tvaRate || 20
     const tpRate = taxeProfRate || 0

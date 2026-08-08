@@ -20,9 +20,11 @@ export async function GET() {
     // Parallel queries for dashboard stats
     const [
       shipmentsToday,
-      revenueToday,
+      ordersToday,
+      packagesToday,
       shipmentsWeek,
-      revenueWeek,
+      ordersWeek,
+      packagesWeek,
       clientsCount,
       vehiclesCount,
       recentShipments,
@@ -32,19 +34,27 @@ export async function GET() {
       db.shipment.count({
         where: { date: { gte: todayStart, lt: todayEnd } },
       }),
-      // Revenue today
-      db.shipment.aggregate({
-        where: { date: { gte: todayStart, lt: todayEnd } },
-        _sum: { totalAmount: true },
+      // Orders today
+      db.order.count({
+        where: { shipment: { date: { gte: todayStart, lt: todayEnd } } },
+      }),
+      // Packages today
+      db.order.aggregate({
+        where: { shipment: { date: { gte: todayStart, lt: todayEnd } } },
+        _sum: { packageCount: true },
       }),
       // Shipments this week
       db.shipment.count({
         where: { date: { gte: weekStart } },
       }),
-      // Revenue this week
-      db.shipment.aggregate({
-        where: { date: { gte: weekStart } },
-        _sum: { totalAmount: true },
+      // Orders this week
+      db.order.count({
+        where: { shipment: { date: { gte: weekStart } } },
+      }),
+      // Packages this week
+      db.order.aggregate({
+        where: { shipment: { date: { gte: weekStart } } },
+        _sum: { packageCount: true },
       }),
       // Total clients
       db.client.count(),
@@ -54,7 +64,10 @@ export async function GET() {
       db.shipment.findMany({
         take: 10,
         orderBy: { date: 'desc' },
-        include: { client: true, vehicle: true },
+        include: {
+          vehicle: true,
+          orders: { include: { client: true } },
+        },
       }),
       // Shipments for last 7 days for chart
       db.shipment.findMany({
@@ -63,31 +76,38 @@ export async function GET() {
             gte: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6),
           },
         },
-        select: { date: true, totalAmount: true },
+        include: { orders: true },
       }),
     ])
 
-    // Revenue by day (last 7 days)
-    const revenueByDay: { date: string; revenue: number }[] = []
+    // Orders/packages by day (last 7 days)
+    const ordersByDay: { date: string; orders: number; packages: number }[] = []
     for (let i = 6; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i)
       const dStr = d.toISOString().split('T')[0]
-      const dayRevenue = last7DaysShipments
-        .filter((s) => s.date.toISOString().split('T')[0] === dStr)
-        .reduce((sum, s) => sum + s.totalAmount, 0)
-      revenueByDay.push({ date: dStr, revenue: dayRevenue })
+      const dayShipments = last7DaysShipments.filter(
+        (s) => s.date.toISOString().split('T')[0] === dStr
+      )
+      const dayOrders = dayShipments.reduce((sum, s) => sum + s.orders.length, 0)
+      const dayPackages = dayShipments.reduce(
+        (sum, s) => sum + s.orders.reduce((ss, o) => ss + o.packageCount, 0),
+        0
+      )
+      ordersByDay.push({ date: dStr, orders: dayOrders, packages: dayPackages })
     }
 
     return NextResponse.json({
       data: {
         shipmentsToday,
-        revenueToday: revenueToday._sum.totalAmount || 0,
+        ordersToday,
+        packagesToday: packagesToday._sum.packageCount || 0,
         shipmentsWeek,
-        revenueWeek: revenueWeek._sum.totalAmount || 0,
+        ordersWeek,
+        packagesWeek: packagesWeek._sum.packageCount || 0,
         clientsCount,
         vehiclesCount,
         recentShipments,
-        revenueByDay,
+        ordersByDay,
       },
       success: true,
     })
