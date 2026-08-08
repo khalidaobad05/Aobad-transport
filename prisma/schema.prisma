@@ -1,0 +1,93 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Client {
+  id        String   @id @default(cuid())
+  code      Int      @unique
+  name      String
+  phone     String?
+  address   String?
+  ifu       String?   // Numéro IFU (Identifiant Fiscal Unique)
+  ice       String?   // Identifiant Commun des Entreprises
+  rc        String?   // Registre de Commerce
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shipments Shipment[]
+  invoices  Invoice[]
+}
+
+model Vehicle {
+  id           String   @id @default(cuid())
+  registration String   @unique // رقم التسجيل
+  driverName   String   // اسم صاحب المركبة / الشريك
+  phone        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  shipments Shipment[]
+  expenses  Expense[]
+}
+
+model Shipment {
+  id          String   @id @default(cuid())
+  number      Int      @unique // رقم الشحنة
+  date        DateTime // التاريخ
+  status      String   @default("قيد التوصيل") // حالة الشحنة
+  packageCount Int     @default(0) // عدد الطرود
+  unitPrice   Float    @default(0) // سعر الطرد
+  totalAmount Float    @default(0) // المبلغ الإجمالي
+  description String?  // وصف الشحنة
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  clientId   String
+  client     Client  @relation(fields: [clientId], references: [id])
+  vehicleId  String
+  vehicle    Vehicle @relation(fields: [vehicleId], references: [id])
+
+  expenses Expense[]
+}
+
+model Expense {
+  id          String   @id @default(cuid())
+  number      String   @unique // رقم المصروف EXP-001
+  date        DateTime // تاريخ المصروف
+  type        String   // نوع المصروف (وقود، رسوم طريق، صيانة...)
+  amount      Float    // المبلغ
+  notes       String?  // ملاحظات
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  shipmentId String?
+  shipment   Shipment?  @relation(fields: [shipmentId], references: [id])
+  vehicleId  String
+  vehicle    Vehicle   @relation(fields: [vehicleId], references: [id])
+}
+
+model Invoice {
+  id              String   @id @default(cuid())
+  number          String   @unique // رقم الفاتورة
+  date            DateTime // تاريخ الفاتورة
+  paymentMethod   String   @default("نقدي") // طريقة الدفع
+  htAmount        Float    @default(0) // المبلغ HT
+  tvaRate         Float    @default(20) // نسبة TVA
+  tvaAmount       Float    @default(0) // مبلغ TVA
+  taxeProfRate    Float    @default(0) // نسبة الضريبة المهنية
+  taxeProfAmount  Float    @default(0) // مبلغ الضريبة المهنية
+  ttcAmount       Float    @default(0) // المبلغ TTC
+  timbreFiscal    Float    @default(0) // Timbre fiscal
+  status          String   @default("غير مدفوعة") // حالة الفاتورة
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  clientId String
+  client   Client  @relation(fields: [clientId], references: [id])
+}
