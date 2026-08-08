@@ -1,0 +1,628 @@
+    70→    70→  status: string;
+    71→    71→  orders: OrderItem[];
+    72→    72→}
+    73→    73→
+    74→    74→const STATUS_OPTIONS = [
+    75→    75→  { value: 'الكل', label: 'الكل' },
+    76→    76→  { value: 'تم التسليم', label: 'تم التسليم' },
+    77→    77→  { value: 'قيد التوصيل', label: 'قيد التوصيل' },
+    78→    78→  { value: 'ملغاة', label: 'ملغاة' },
+    79→    79→];
+    80→    80→
+    81→    81→const STATUS_FORM_OPTIONS = [
+    82→    82→  { value: 'قيد التوصيل', label: 'قيد التوصيل' },
+    83→    83→  { value: 'تم التسليم', label: 'تم التسليم' },
+    84→    84→  { value: 'ملغاة', label: 'ملغاة' },
+    85→    85→];
+    86→    86→
+    87→    87→const emptyOrder: OrderItem = {
+    88→    88→  clientId: '',
+    89→    89→  packageCount: 0,
+    90→    90→  description: '',
+    91→    91→};
+    92→    92→
+    93→    93→const emptyForm: ShipmentFormData = {
+    94→    94→  date: '',
+    95→    95→  vehicleId: '',
+    96→    96→  description: '',
+    97→    97→  status: 'قيد التوصيل',
+    98→    98→  orders: [{ ...emptyOrder }],
+    99→    99→};
+   100→   100→
+   101→   101→function formatDate(dateStr: string): string {
+   102→   102→  const d = new Date(dateStr);
+   103→   103→  const y = d.getFullYear();
+   104→   104→  const m = String(d.getMonth() + 1).padStart(2, '0');
+   105→   105→  const day = String(d.getDate()).padStart(2, '0');
+   106→   106→  return `${y}/${m}/${day}`;
+   107→   107→}
+   108→   108→
+   109→   109→function formatDateInput(dateStr: string): string {
+   110→   110→  const d = new Date(dateStr);
+   111→   111→  const y = d.getFullYear();
+   112→   112→  const m = String(d.getMonth() + 1).padStart(2, '0');
+   113→   113→  const day = String(d.getDate()).padStart(2, '0');
+   114→   114→  return `${y}-${m}-${day}`;
+   115→   115→}
+   116→   116→
+   117→   117→function getStatusBadge(status: string) {
+   118→   118→  switch (status) {
+   119→   119→    case 'تم التسليم':
+   120→   120→      return (
+   121→   121→        <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-0">
+   122→   122→          تم التسليم
+   123→   123→        </Badge>
+   124→   124→      );
+   125→   125→    case 'قيد التوصيل':
+   126→   126→      return (
+   127→   127→        <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-0">
+   128→   128→          قيد التوصيل
+   129→   129→        </Badge>
+   130→   130→      );
+   131→   131→    case 'ملغاة':
+   132→   132→      return (
+   133→   133→        <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-0">
+   134→   134→          ملغاة
+   135→   135→        </Badge>
+   136→   136→      );
+   137→   137→    default:
+   138→   138→      return <Badge variant="secondary">{status}</Badge>;
+   139→   139→  }
+   140→   140→}
+   141→   141→
+   142→   142→export default function ShipmentsManager() {
+   143→   143→  const [shipments, setShipments] = useState<Shipment[]>([]);
+   144→   144→  const [loading, setLoading] = useState(true);
+   145→   145→  const [dialogOpen, setDialogOpen] = useState(false);
+   146→   146→  const [editingShipment, setEditingShipment] = useState<Shipment | null>(null);
+   147→   147→  const [form, setForm] = useState<ShipmentFormData>(emptyForm);
+   148→   148→  const [submitting, setSubmitting] = useState(false);
+   149→   149→  const [deletingId, setDeletingId] = useState<string | null>(null);
+   150→   150→  const [expandedShipment, setExpandedShipment] = useState<string | null>(null);
+   151→   151→
+   152→   152→  // Reference data
+   153→   153→  const [clients, setClients] = useState<Client[]>([]);
+   154→   154→  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+   155→   155→
+   156→   156→  // Filter state
+   157→   157→  const [filterDate, setFilterDate] = useState('');
+   158→   158→  const [filterStatus, setFilterStatus] = useState('الكل');
+   159→   159→  const [filterVehicleId, setFilterVehicleId] = useState('');
+   160→   160→
+   161→   161→  const fetchShipments = useCallback(async () => {
+   162→   162→    try {
+   163→   163→      setLoading(true);
+   164→   164→      const params = new URLSearchParams();
+   165→   165→      if (filterDate) params.set('date', filterDate);
+   166→   166→      if (filterStatus && filterStatus !== 'الكل') params.set('status', filterStatus);
+   167→   167→      if (filterVehicleId) params.set('vehicleId', filterVehicleId);
+   168→   168→
+   169→   169→      const res = await fetch(`/api/shipments?${params.toString()}`);
+   170→   170→      if (!res.ok) throw new Error('فشل في تحميل الشحنات');
+   171→   171→      const json = await res.json();
+   172→   172→      setShipments(Array.isArray(json) ? json : json.data ?? []);
+   173→   173→    } catch (err) {
+   174→   174→      toast.error(
+   175→   175→        err instanceof Error ? err.message : 'حدث خطأ أثناء تحميل الشحنات'
+   176→   176→      );
+   177→   177→    } finally {
+   178→   178→      setLoading(false);
+   179→   179→    }
+   180→   180→  }, [filterDate, filterStatus, filterVehicleId]);
+   181→   181→
+   182→   182→  const fetchClients = useCallback(async () => {
+   183→   183→    try {
+   184→   184→      const res = await fetch('/api/clients');
+   185→   185→      if (!res.ok) return;
+   186→   186→      const json = await res.json();
+   187→   187→      setClients(Array.isArray(json) ? json : json.data ?? []);
+   188→   188→    } catch {
+   189→   189→      // silently fail
+   190→   190→    }
+   191→   191→  }, []);
+   192→   192→
+   193→   193→  const fetchVehicles = useCallback(async () => {
+   194→   194→    try {
+   195→   195→      const res = await fetch('/api/vehicles');
+   196→   196→      if (!res.ok) return;
+   197→   197→      const json = await res.json();
+   198→   198→      setVehicles(Array.isArray(json) ? json : json.data ?? []);
+   199→   199→    } catch {
+   200→   200→      // silently fail
+   201→   201→    }
+   202→   202→  }, []);
+   203→   203→
+   204→   204→  useEffect(() => {
+   205→   205→    fetchShipments();
+   206→   206→  }, [fetchShipments]);
+   207→   207→
+   208→   208→  useEffect(() => {
+   209→   209→    fetchClients();
+   210→   210→    fetchVehicles();
+   211→   211→  }, [fetchClients, fetchVehicles]);
+   212→   212→
+   213→   213→  function openCreateDialog() {
+   214→   214→    setEditingShipment(null);
+   215→   215→    setForm(emptyForm);
+   216→   216→    setDialogOpen(true);
+   217→   217→  }
+   218→   218→
+   219→   219→  function openEditDialog(shipment: Shipment) {
+   220→   220→    setEditingShipment(shipment);
+   221→   221→    setForm({
+   222→   222→      date: formatDateInput(shipment.date),
+   223→   223→      vehicleId: shipment.vehicle.id,
+   224→   224→      description: shipment.description ?? '',
+   225→   225→      status: shipment.status,
+   226→   226→      orders: shipment.orders.map((o) => ({
+   227→   227→        id: o.id,
+   228→   228→        clientId: o.client.id,
+   229→   229→        packageCount: o.packageCount,
+   230→   230→        description: o.description ?? '',
+   231→   231→      })),
+   232→   232→    });
+   233→   233→    setDialogOpen(true);
+   234→   234→  }
+   235→   235→
+   236→   236→  // Order management within the form
+   237→   237→  function addOrder() {
+   238→   238→    setForm({ ...form, orders: [...form.orders, { ...emptyOrder }] });
+   239→   239→  }
+   240→   240→
+   241→   241→  function removeOrder(index: number) {
+   242→   242→    if (form.orders.length <= 1) {
+   243→   243→      toast.error('يجب أن تحتوي الشحنة على طلبية واحدة على الأقل');
+   244→   244→      return;
+   245→   245→    }
+   246→   246→    const newOrders = form.orders.filter((_, i) => i !== index);
+   247→   247→    setForm({ ...form, orders: newOrders });
+   248→   248→  }
+   249→   249→
+   250→   250→  function updateOrder(index: number, field: keyof OrderItem, value: string | number) {
+   251→   251→    const newOrders = [...form.orders];
+   252→   252→    (newOrders[index] as Record<string, unknown>)[field] = value;
+   253→   253→    setForm({ ...form, orders: newOrders });
+   254→   254→  }
+   255→   255→
+   256→   256→  async function handleSubmit(e: React.FormEvent) {
+   257→   257→    e.preventDefault();
+   258→   258→    if (!form.date) {
+   259→   259→      toast.error('التاريخ مطلوب');
+   260→   260→      return;
+   261→   261→    }
+   262→   262→    if (!form.vehicleId) {
+   263→   263→      toast.error('المركبة مطلوبة');
+   264→   264→      return;
+   265→   265→    }
+   266→   266→
+   267→   267→    // Validate orders
+   268→   268→    const validOrders = form.orders.filter((o) => o.clientId && o.packageCount > 0);
+   269→   269→    if (validOrders.length === 0) {
+   270→   270→      toast.error('يجب إضافة طلبية واحدة صالحة على الأقل');
+   271→   271→      return;
+   272→   272→    }
+   273→   273→
+   274→   274→    try {
+   275→   275→      setSubmitting(true);
+   276→   276→      const body = {
+   277→   277→        date: form.date,
+   278→   278→        vehicleId: form.vehicleId,
+   279→   279→        description: form.description.trim() || undefined,
+   280→   280→        status: form.status,
+   281→   281→        orders: validOrders.map((o) => ({
+   282→   282→          clientId: o.clientId,
+   283→   283→          packageCount: o.packageCount,
+   284→   284→          description: o.description?.trim() || undefined,
+   285→   285→        })),
+   286→   286→      };
+   287→   287→
+   288→   288→      if (editingShipment) {
+   289→   289→        const res = await fetch(`/api/shipments/${editingShipment.id}`, {
+   290→   290→          method: 'PUT',
+   291→   291→          headers: { 'Content-Type': 'application/json' },
+   292→   292→          body: JSON.stringify(body),
+   293→   293→        });
+   294→   294→        if (!res.ok) throw new Error('فشل في تحديث الشحنة');
+   295→   295→        toast.success('تم تحديث الشحنة بنجاح');
+   296→   296→      } else {
+   297→   297→        const res = await fetch('/api/shipments', {
+   298→   298→          method: 'POST',
+   299→   299→          headers: { 'Content-Type': 'application/json' },
+   300→   300→          body: JSON.stringify(body),
+   301→   301→        });
+   302→   302→        if (!res.ok) throw new Error('فشل في إضافة الشحنة');
+   303→   303→        toast.success('تم إضافة الشحنة بنجاح');
+   304→   304→      }
+   305→   305→
+   306→   306→      setDialogOpen(false);
+   307→   307→      fetchShipments();
+   308→   308→    } catch (err) {
+   309→   309→      toast.error(err instanceof Error ? err.message : 'حدث خطأ غير متوقع');
+   310→   310→    } finally {
+   311→   311→      setSubmitting(false);
+   312→   312→    }
+   313→   313→  }
+   314→   314→
+   315→   315→  async function handleDelete(id: string) {
+   316→   316→    try {
+   317→   317→      setDeletingId(id);
+   318→   318→      const res = await fetch(`/api/shipments/${id}`, { method: 'DELETE' });
+   319→   319→      if (!res.ok) throw new Error('فشل في حذف الشحنة');
+   320→   320→      toast.success('تم حذف الشحنة بنجاح');
+   321→   321→      fetchShipments();
+   322→   322→    } catch (err) {
+   323→   323→      toast.error(err instanceof Error ? err.message : 'حدث خطأ أثناء الحذف');
+   324→   324→    } finally {
+   325→   325→      setDeletingId(null);
+   326→   326→    }
+   327→   327→  }
+   328→   328→
+   329→   329→  function handleClearFilters() {
+   330→   330→    setFilterDate('');
+   331→   331→    setFilterStatus('الكل');
+   332→   332→    setFilterVehicleId('');
+   333→   333→  }
+   334→   334→
+   335→   335→  function handleSearch() {
+   336→   336→    fetchShipments();
+   337→   337→  }
+   338→   338→
+   339→   339→  function getTotalPackages(shipment: Shipment): number {
+   340→   340→    return shipment.orders.reduce((sum, o) => sum + o.packageCount, 0);
+   341→   341→  }
+   342→   342→
+   343→   343→  return (
+   344→   344→    <div className="space-y-6">
+   345→   345→      {/* Filter Bar */}
+   346→   346→      <Card className="bg-white dark:bg-gray-900 border shadow-sm">
+   347→   347→        <CardContent className="p-4">
+   348→   348→          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+   349→   349→            <div className="space-y-2">
+   350→   350→              <Label htmlFor="filter-date" className="text-sm">التاريخ</Label>
+   351→   351→              <Input
+   352→   352→                id="filter-date"
+   353→   353→                type="date"
+   354→   354→                value={filterDate}
+   355→   355→                onChange={(e) => setFilterDate(e.target.value)}
+   356→   356→                className="w-full"
+   357→   357→              />
+   358→   358→            </div>
+   359→   359→            <div className="space-y-2">
+   360→   360→              <Label className="text-sm">الحالة</Label>
+   361→   361→              <Select value={filterStatus} onValueChange={setFilterStatus}>
+   362→   362→                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+   363→   363→                <SelectContent>
+   364→   364→                  {STATUS_OPTIONS.map((opt) => (
+   365→   365→                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+   366→   366→                  ))}
+   367→   367→                </SelectContent>
+   368→   368→              </Select>
+   369→   369→            </div>
+   370→   370→            <div className="space-y-2">
+   371→   371→              <Label className="text-sm">المركبة</Label>
+   372→   372→              <Select value={filterVehicleId} onValueChange={setFilterVehicleId}>
+   373→   373→                <SelectTrigger className="w-full"><SelectValue placeholder="الكل" /></SelectTrigger>
+   374→   374→                <SelectContent>
+   375→   375→                  <SelectItem value="all">الكل</SelectItem>
+   376→   376→                  {vehicles.map((v) => (
+   377→   377→                    <SelectItem key={v.id} value={v.id}>
+   378→   378→                      {v.registration} - {v.driverName}
+   379→   379→                    </SelectItem>
+   380→   380→                  ))}
+   381→   381→                </SelectContent>
+   382→   382→              </Select>
+   383→   383→            </div>
+   384→   384→            <div className="flex items-end gap-2">
+   385→   385→              <Button onClick={handleSearch} className="bg-amber-500 hover:bg-amber-600 text-white flex-1">
+   386→   386→                <Search className="size-4" />
+   387→   387→                بحث
+   388→   388→              </Button>
+   389→   389→              <Button variant="outline" onClick={handleClearFilters} className="flex-1">
+   390→   390→                <X className="size-4" />
+   391→   391→                مسح
+   392→   392→              </Button>
+   393→   393→            </div>
+   394→   394→          </div>
+   395→   395→        </CardContent>
+   396→   396→      </Card>
+   397→   397→
+   398→   398→      {/* Header with Add Button */}
+   399→   399→      <div className="flex items-center justify-between">
+   400→   400→        <Button onClick={openCreateDialog} className="bg-amber-500 hover:bg-amber-600 text-white">
+   401→   401→          <Plus className="size-4" />
+   402→   402→          إضافة شحنة
+   403→   403→        </Button>
+   404→   404→      </div>
+   405→   405→
+   406→   406→      {/* Shipments Table */}
+   407→   407→      <Card className="bg-white dark:bg-gray-900 border shadow-sm">
+   408→   408→        <CardHeader className="p-4 pb-0">
+   409→   409→          <CardTitle className="text-lg">الشحنات</CardTitle>
+   410→   410→        </CardHeader>
+   411→   411→        <CardContent className="p-0">
+   412→   412→          {loading ? (
+   413→   413→            <div className="p-6 space-y-3">
+   414→   414→              {Array.from({ length: 5 }).map((_, i) => (
+   415→   415→                <Skeleton key={i} className="h-10 w-full" />
+   416→   416→              ))}
+   417→   417→            </div>
+   418→   418→          ) : shipments.length > 0 ? (
+   419→   419→            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+   420→   420→              <Table>
+   421→   421→                <TableHeader>
+   422→   422→                  <TableRow>
+   423→   423→                    <TableHead>رقم الشحنة</TableHead>
+   424→   424→                    <TableHead>التاريخ</TableHead>
+   425→   425→                    <TableHead>المركبة</TableHead>
+   426→   426→                    <TableHead>الصاحب</TableHead>
+   427→   427→                    <TableHead>عدد الطلبيات</TableHead>
+   428→   428→                    <TableHead>إجمالي الطرود</TableHead>
+   429→   429→                    <TableHead>الحالة</TableHead>
+   430→   430→                    <TableHead>الإجراءات</TableHead>
+   431→   431→                  </TableRow>
+   432→   432→                </TableHeader>
+   433→   433→                <TableBody>
+   434→   434→                  {shipments.map((shipment) => {
+   435→   435→                    const isExpanded = expandedShipment === shipment.id;
+   436→   436→                    const totalPkgs = getTotalPackages(shipment);
+   437→   437→                    return (
+   438→   438→                      <>
+   439→   439→                        <TableRow
+   440→   440→                          key={shipment.id}
+   441→   441→                          className="cursor-pointer hover:bg-amber-50/50 dark:hover:bg-amber-900/10"
+   442→   442→                          onClick={() => setExpandedShipment(isExpanded ? null : shipment.id)}
+   443→   443→                        >
+   444→   444→                          <TableCell className="font-medium">{shipment.number}</TableCell>
+   445→   445→                          <TableCell>{formatDate(shipment.date)}</TableCell>
+   446→   446→                          <TableCell>{shipment.vehicle.registration}</TableCell>
+   447→   447→                          <TableCell>
+   448→   448→                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+   449→   449→                              {shipment.vehicle.ownerName}
+   450→   450→                            </span>
+   451→   451→                          </TableCell>
+   452→   452→                          <TableCell>
+   453→   453→                            <div className="flex items-center gap-1">
+   454→   454→                              <Package className="size-3.5 text-muted-foreground" />
+   455→   455→                              <span className="font-semibold">{shipment.orders.length}</span>
+   456→   456→                            </div>
+   457→   457→                          </TableCell>
+   458→   458→                          <TableCell className="font-bold text-lg">{totalPkgs}</TableCell>
+   459→   459→                          <TableCell>{getStatusBadge(shipment.status)}</TableCell>
+   460→   460→                          <TableCell>
+   461→   461→                            <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+   462→   462→                              <Button
+   463→   463→                                variant="ghost"
+   464→   464→                                size="icon"
+   465→   465→                                onClick={() => openEditDialog(shipment)}
+   466→   466→                                className="text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+   467→   467→                                title="تعديل"
+   468→   468→                              >
+   469→   469→                                <Pencil className="size-4" />
+   470→   470→                              </Button>
+   471→   471→                              <Button
+   472→   472→                                variant="ghost"
+   473→   473→                                size="icon"
+   474→   474→                                onClick={() => handleDelete(shipment.id)}
+   475→   475→                                disabled={deletingId === shipment.id}
+   476→   476→                                className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+   477→   477→                                title="حذف"
+   478→   478→                              >
+   479→   479→                                {deletingId === shipment.id ? (
+   480→   480→                                  <Loader2 className="size-4 animate-spin" />
+   481→   481→                                ) : (
+   482→   482→                                  <Trash2 className="size-4" />
+   483→   483→                                )}
+   484→   484→                              </Button>
+   485→   485→                            </div>
+   486→   486→                          </TableCell>
+   487→   487→                        </TableRow>
+   488→   488→                        {/* Expanded: show orders detail */}
+   489→   489→                        {isExpanded && (
+   490→   490→                          <TableRow key={`${shipment.id}-orders`}>
+   491→   491→                            <TableCell colSpan={8} className="bg-amber-50/30 dark:bg-amber-900/10 px-8 py-4">
+   492→   492→                              <div className="space-y-2">
+   493→   493→                                <p className="text-sm font-semibold text-amber-700 dark:text-amber-400 mb-2">
+   494→   494→                                  تفاصيل الطلبيات ({shipment.orders.length})
+   495→   495→                                </p>
+   496→   496→                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+   497→   497→                                  {shipment.orders.map((order, oi) => (
+   498→   498→                                    <div
+   499→   499→                                      key={order.id}
+   500→   500→                                      className="border rounded-lg p-3 bg-white dark:bg-gray-800"
+   501→   501→                                    >
+   502→   502→                                      <div className="flex items-center justify-between mb-1">
+   503→   503→                                        <span className="text-xs text-muted-foreground">طلبية {oi + 1}</span>
+   504→   504→                                        <Badge variant="secondary" className="text-xs">
+   505→   505→                                          {order.packageCount} طرود
+   506→   506→                                        </Badge>
+   507→   507→                                      </div>
+   508→   508→                                      <p className="font-semibold text-sm">{order.client.name}</p>
+   509→   509→                                      {order.description && (
+   510→   510→                                        <p className="text-xs text-muted-foreground mt-1">{order.description}</p>
+   511→   511→                                      )}
+   512→   512→                                    </div>
+   513→   513→                                  ))}
+   514→   514→                                </div>
+   515→   515→                              </div>
+   516→   516→                            </TableCell>
+   517→   517→                          </TableRow>
+   518→   518→                        )}
+   519→   519→                      </>
+   520→   520→                    );
+   521→   521→                  })}
+   522→   522→                </TableBody>
+   523→   523→              </Table>
+   524→   524→            </div>
+   525→   525→          ) : (
+   526→   526→            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+   527→   527→              <p className="text-base">لا توجد شحنات</p>
+   528→   528→              <p className="text-sm mt-1">
+   529→   529→                اضغط على &quot;إضافة شحنة&quot; لإضافة شحنة جديدة
+   530→   530→              </p>
+   531→   531→            </div>
+   532→   532→          )}
+   533→   533→        </CardContent>
+   534→   534→      </Card>
+   535→   535→
+   536→   536→      {/* Create / Edit Dialog */}
+   537→   537→      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+   538→   538→        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+   539→   539→          <DialogHeader>
+   540→   540→            <DialogTitle>
+   541→   541→              {editingShipment ? 'تعديل الشحنة' : 'إضافة شحنة جديدة'}
+   542→   542→            </DialogTitle>
+   543→   543→          </DialogHeader>
+   544→   544→          <form onSubmit={handleSubmit} className="space-y-4">
+   545→   545→            <div className="grid grid-cols-2 gap-4">
+   546→   546→              <div className="space-y-2">
+   547→   547→                <Label htmlFor="shipment-date">التاريخ <span className="text-red-500">*</span></Label>
+   548→   548→                <Input
+   549→   549→                  id="shipment-date"
+   550→   550→                  type="date"
+   551→   551→                  value={form.date}
+   552→   552→                  onChange={(e) => setForm({ ...form, date: e.target.value })}
+   553→   553→                  required
+   554→   554→                />
+   555→   555→              </div>
+   556→   556→              <div className="space-y-2">
+   557→   557→                <Label>المركبة <span className="text-red-500">*</span></Label>
+   558→   558→                <Select
+   559→   559→                  value={form.vehicleId}
+   560→   560→                  onValueChange={(val) => setForm({ ...form, vehicleId: val })}
+   561→   561→                >
+   562→   562→                  <SelectTrigger className="w-full">
+   563→   563→                    <SelectValue placeholder="اختر المركبة" />
+   564→   564→                  </SelectTrigger>
+   565→   565→                  <SelectContent>
+   566→   566→                    {vehicles.map((v) => (
+   567→   567→                      <SelectItem key={v.id} value={v.id}>
+   568→   568→                        {v.registration} - {v.driverName} ({v.ownerName})
+   569→   569→                      </SelectItem>
+   570→   570→                    ))}
+   571→   571→                  </SelectContent>
+   572→   572→                </Select>
+   573→   573→              </div>
+   574→   574→            </div>
+   575→   575→
+   576→   576→            <div className="grid grid-cols-2 gap-4">
+   577→   577→              <div className="space-y-2">
+   578→   578→                <Label>حالة الشحنة</Label>
+   579→   579→                <Select
+   580→   580→                  value={form.status}
+   581→   581→                  onValueChange={(val) => setForm({ ...form, status: val })}
+   582→   582→                >
+   583→   583→                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+   584→   584→                  <SelectContent>
+   585→   585→                    {STATUS_FORM_OPTIONS.map((opt) => (
+   586→   586→                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+   587→   587→                    ))}
+   588→   588→                  </SelectContent>
+   589→   589→                </Select>
+   590→   590→              </div>
+   591→   591→              <div className="space-y-2">
+   592→   592→                <Label htmlFor="shipment-desc">وصف الشحنة</Label>
+   593→   593→                <Input
+   594→   594→                  id="shipment-desc"
+   595→   595→                  value={form.description}
+   596→   596→                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+   597→   597→                  placeholder="مثال: رحلة الدار البيضاء - الرباط"
+   598→   598→                />
+   599→   599→              </div>
+   600→   600→            </div>
+   601→   601→
+   602→   602→            {/* Orders Section */}
+   603→   603→            <div className="space-y-3">
+   604→   604→              <div className="flex items-center justify-between">
+   605→   605→                <Label className="text-base font-bold">الطلبيات <span className="text-red-500">*</span></Label>
+   606→   606→                <Button type="button" variant="outline" size="sm" onClick={addOrder}>
+   607→   607→                  <Plus className="size-3.5 ml-1" />
+   608→   608→                  إضافة طلبية
+   609→   609→                </Button>
+   610→   610→              </div>
+   611→   611→
+   612→   612→              {form.orders.map((order, index) => (
+   613→   613→                <div
+   614→   614→                  key={index}
+   615→   615→                  className="border rounded-lg p-3 space-y-3 bg-muted/30"
+   616→   616→                >
+   617→   617→                  <div className="flex items-center justify-between">
+   618→   618→                    <span className="text-sm font-semibold text-amber-700 dark:text-amber-400">
+   619→   619→                      طلبية {index + 1}
+   620→   620→                    </span>
+   621→   621→                    {form.orders.length > 1 && (
+   622→   622→                      <Button
+   623→   623→                        type="button"
+   624→   624→                        variant="ghost"
+   625→   625→                        size="icon"
+   626→   626→                        className="size-7 text-red-500 hover:text-red-700"
+   627→   627→                        onClick={() => removeOrder(index)}
+   628→   628→                      >
+   629→   629→                        <Trash2 className="size-3.5" />
+   630→   630→                      </Button>
+   631→   631→                    )}
+   632→   632→                  </div>
+   633→   633→                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+   634→   634→                    <div className="space-y-1">
+   635→   635→                      <Label className="text-xs">الزبون</Label>
+   636→   636→                      <Select
+   637→   637→                        value={order.clientId}
+   638→   638→                        onValueChange={(val) => updateOrder(index, 'clientId', val)}
+   639→   639→                      >
+   640→   640→                        <SelectTrigger className="w-full">
+   641→   641→                          <SelectValue placeholder="اختر الزبون" />
+   642→   642→                        </SelectTrigger>
+   643→   643→                        <SelectContent>
+   644→   644→                          {clients.map((c) => (
+   645→   645→                            <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+   646→   646→                          ))}
+   647→   647→                        </SelectContent>
+   648→   648→                      </Select>
+   649→   649→                    </div>
+   650→   650→                    <div className="space-y-1">
+   651→   651→                      <Label className="text-xs">عدد الطرود</Label>
+   652→   652→                      <Input
+   653→   653→                        type="number"
+   654→   654→                        min={1}
+   655→   655→                        value={order.packageCount || ''}
+   656→   656→                        onChange={(e) => updateOrder(index, 'packageCount', parseInt(e.target.value) || 0)}
+   657→   657→                        placeholder="عدد الطرود"
+   658→   658→                      />
+   659→   659→                    </div>
+   660→   660→                  </div>
+   661→   661→                  <div className="space-y-1">
+   662→   662→                    <Label className="text-xs">وصف (اختياري)</Label>
+   663→   663→                    <Input
+   664→   664→                      value={order.description}
+   665→   665→                      onChange={(e) => updateOrder(index, 'description', e.target.value)}
+   666→   666→                      placeholder="وصف الطلبية"
+   667→   667→                    />
+   668→   668→                  </div>
+   669→   669→                </div>
+   670→   670→              ))}
+   671→   671→            </div>
+   672→   672→
+   673→   673→            <DialogFooter>
+   674→   674→              <Button
+   675→   675→                type="button"
+   676→   676→                variant="outline"
+   677→   677→                onClick={() => setDialogOpen(false)}
+   678→   678→                disabled={submitting}
+   679→   679→              >
+   680→   680→                إلغاء
+   681→   681→              </Button>
+   682→   682→              <Button
+   683→   683→                type="submit"
+   684→   684→                disabled={submitting}
+   685→   685→                className="bg-amber-500 hover:bg-amber-600 text-white"
+   686→   686→              >
+   687→   687→                {submitting && <Loader2 className="size-4 animate-spin" />}
+   688→   688→                {editingShipment ? 'تحديث' : 'إضافة'}
+   689→   689→              </Button>
+   690→   690→            </DialogFooter>
+   691→   691→          </form>
+   692→   692→        </DialogContent>
+   693→   693→      </Dialog>
+   694→   694→    </div>
+   695→   695→  );
+   696→   696→}
+   697→   697→
