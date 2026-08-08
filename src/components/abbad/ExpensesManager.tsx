@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Loader2, Search, X } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, Search, X, TrendingDown, Receipt, CalendarDays, Truck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -36,12 +36,22 @@ interface Vehicle {
   id: string;
   registration: string;
   driverName: string;
+  ownerName: string;
 }
 
-interface Shipment {
+interface OrderBrief {
+  id: string;
+  packageCount: number;
+  client: { name: string };
+}
+
+interface ShipmentBrief {
   id: string;
   number: number;
-  client: { name: string };
+  date: string;
+  vehicle: { registration: string; driverName: string };
+  orders: OrderBrief[];
+  description?: string | null;
 }
 
 interface Expense {
@@ -52,7 +62,7 @@ interface Expense {
   amount: number;
   notes: string | null;
   vehicle: Vehicle;
-  shipment: Shipment | null;
+  shipment: ShipmentBrief | null;
 }
 
 interface ExpenseFormData {
@@ -102,6 +112,14 @@ function formatCurrency(amount: number): string {
   return amount.toLocaleString('ar-MA') + ' د.م.';
 }
 
+function getShipmentLabel(s: ShipmentBrief): string {
+  const clientNames = s.orders.map(o => o.client.name).join('، ');
+  if (clientNames) {
+    return `شحنة ${s.number} - ${clientNames}`;
+  }
+  return `شحنة ${s.number}${s.description ? ` - ${s.description}` : ''}`;
+}
+
 export default function ExpensesManager() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
@@ -113,20 +131,38 @@ export default function ExpensesManager() {
 
   // Reference data
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [shipments, setShipments] = useState<Shipment[]>([]);
+  const [shipments, setShipments] = useState<ShipmentBrief[]>([]);
 
   // Filter state
   const [filterDate, setFilterDate] = useState('');
   const [filterVehicleId, setFilterVehicleId] = useState('');
   const [filterType, setFilterType] = useState('');
 
+  // Computed stats
+  const stats = useMemo(() => {
+    const total = expenses.reduce((sum, e) => sum + e.amount, 0);
+    const byType: Record<string, number> = {};
+    expenses.forEach(e => {
+      byType[e.type] = (byType[e.type] || 0) + e.amount;
+    });
+    const topType = Object.entries(byType).sort((a, b) => b[1] - a[1])[0];
+    return {
+      total,
+      count: expenses.length,
+      avgPerExpense: expenses.length > 0 ? total / expenses.length : 0,
+      typesCount: Object.keys(byType).length,
+      topType: topType ? { name: topType[0], amount: topType[1] } : null,
+    };
+  }, [expenses]);
+
   const fetchExpenses = useCallback(async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
       if (filterDate) params.set('date', filterDate);
-      if (filterVehicleId) params.set('vehicleId', filterVehicleId);
-      if (filterType) params.set('type', filterType);
+      // Only send filter if it's not empty and not "all"
+      if (filterVehicleId && filterVehicleId !== 'all') params.set('vehicleId', filterVehicleId);
+      if (filterType && filterType !== 'all') params.set('type', filterType);
 
       const res = await fetch(`/api/expenses?${params.toString()}`);
       if (!res.ok) throw new Error('فشل في تحميل المصروفات');
@@ -173,6 +209,12 @@ export default function ExpensesManager() {
     fetchShipments();
   }, [fetchVehicles, fetchShipments]);
 
+  // Shipments filtered by selected vehicle
+  const filteredShipments = useMemo(() => {
+    if (!form.vehicleId) return shipments;
+    return shipments.filter(s => s.vehicle.id === form.vehicleId);
+  }, [shipments, form.vehicleId]);
+
   function openCreateDialog() {
     setEditingExpense(null);
     setForm(emptyForm);
@@ -216,7 +258,7 @@ export default function ExpensesManager() {
       const body = {
         date: form.date,
         vehicleId: form.vehicleId,
-        shipmentId: form.shipmentId || null,
+        shipmentId: form.shipmentId && form.shipmentId !== 'none' ? form.shipmentId : null,
         type: form.type,
         amount: form.amount,
         notes: form.notes.trim() || undefined,
@@ -273,8 +315,75 @@ export default function ExpensesManager() {
     fetchExpenses();
   }
 
+  // Handle vehicle filter change - convert "all" to empty string
+  function handleVehicleFilterChange(val: string) {
+    setFilterVehicleId(val === 'all' ? '' : val);
+  }
+
+  // Handle type filter change - convert "all" to empty string
+  function handleTypeFilterChange(val: string) {
+    setFilterType(val === 'all' ? '' : val);
+  }
+
   return (
     <div className="space-y-6">
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="bg-white dark:bg-gray-900 border shadow-sm">
+          <CardContent className="p-4 flex items-center gap-4">
+            <div className="p-3 rounded-xl bg-red-100 dark:bg-red-900/30">
+              <TrendingDown className="size-6 text-red-600 dark:text-red-400" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">إجمالي المصاريف</p>
+              <p className="text-xl font-bold text-red-600 dark:text-red-400">
+                {formatCurrency(stats.total)}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-white dark:bg-gray-900 border shadow-sm">
+          <CardContent className="p-4 flex items-center gap-4">
+            <div className="p-3 rounded-xl bg-amber-100 dark:bg-amber-900/30">
+              <Receipt className="size-6 text-amber-600 dark:text-amber-400" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">عدد المصروفات</p>
+              <p className="text-xl font-bold">{stats.count}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-white dark:bg-gray-900 border shadow-sm">
+          <CardContent className="p-4 flex items-center gap-4">
+            <div className="p-3 rounded-xl bg-blue-100 dark:bg-blue-900/30">
+              <CalendarDays className="size-6 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">المتوسط لكل مصروف</p>
+              <p className="text-xl font-bold">{formatCurrency(stats.avgPerExpense)}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-white dark:bg-gray-900 border shadow-sm">
+          <CardContent className="p-4 flex items-center gap-4">
+            <div className="p-3 rounded-xl bg-green-100 dark:bg-green-900/30">
+              <Truck className="size-6 text-green-600 dark:text-green-400" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">أعلى فئة مصاريف</p>
+              <p className="text-lg font-bold">
+                {stats.topType ? stats.topType.name : '—'}
+              </p>
+              {stats.topType && (
+                <p className="text-xs text-muted-foreground">
+                  {formatCurrency(stats.topType.amount)}
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Filter Bar */}
       <Card className="bg-white dark:bg-gray-900 border shadow-sm">
         <CardContent className="p-4">
@@ -294,8 +403,8 @@ export default function ExpensesManager() {
             <div className="space-y-2">
               <Label className="text-sm">المركبة/السائق</Label>
               <Select
-                value={filterVehicleId}
-                onValueChange={setFilterVehicleId}
+                value={filterVehicleId || 'all'}
+                onValueChange={handleVehicleFilterChange}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="الكل" />
@@ -313,8 +422,8 @@ export default function ExpensesManager() {
             <div className="space-y-2">
               <Label className="text-sm">نوع المصروف</Label>
               <Select
-                value={filterType}
-                onValueChange={setFilterType}
+                value={filterType || 'all'}
+                onValueChange={handleTypeFilterChange}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="الكل" />
@@ -382,8 +491,10 @@ export default function ExpensesManager() {
                     <TableHead>التاريخ</TableHead>
                     <TableHead>نوع المصروف</TableHead>
                     <TableHead>المبلغ</TableHead>
-                    <TableHead>ملاحظات</TableHead>
+                    <TableHead>المركبة</TableHead>
                     <TableHead>السائق</TableHead>
+                    <TableHead>الشحنة</TableHead>
+                    <TableHead>ملاحظات</TableHead>
                     <TableHead>الإجراءات</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -394,12 +505,28 @@ export default function ExpensesManager() {
                         {expense.number}
                       </TableCell>
                       <TableCell>{formatDate(expense.date)}</TableCell>
-                      <TableCell>{expense.type}</TableCell>
-                      <TableCell>{formatCurrency(expense.amount)}</TableCell>
-                      <TableCell className="max-w-[200px] truncate">
+                      <TableCell>
+                        <span className="inline-flex items-center px-2 py-1 rounded-md bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 text-xs font-medium">
+                          {expense.type}
+                        </span>
+                      </TableCell>
+                      <TableCell className="font-semibold text-red-600 dark:text-red-400">
+                        {formatCurrency(expense.amount)}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {expense.vehicle.registration}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {expense.vehicle.driverName}
+                      </TableCell>
+                      <TableCell className="text-sm max-w-[180px] truncate">
+                        {expense.shipment
+                          ? getShipmentLabel(expense.shipment)
+                          : '—'}
+                      </TableCell>
+                      <TableCell className="max-w-[150px] truncate text-sm text-muted-foreground">
                         {expense.notes || '—'}
                       </TableCell>
-                      <TableCell>{expense.vehicle.driverName}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
                           <Button
@@ -470,7 +597,7 @@ export default function ExpensesManager() {
               </Label>
               <Select
                 value={form.vehicleId}
-                onValueChange={(val) => setForm({ ...form, vehicleId: val })}
+                onValueChange={(val) => setForm({ ...form, vehicleId: val, shipmentId: '' })}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="اختر المركبة/السائق" />
@@ -487,7 +614,7 @@ export default function ExpensesManager() {
             <div className="space-y-2">
               <Label>الشحنة المرتبطة</Label>
               <Select
-                value={form.shipmentId}
+                value={form.shipmentId || 'none'}
                 onValueChange={(val) => setForm({ ...form, shipmentId: val })}
               >
                 <SelectTrigger className="w-full">
@@ -495,9 +622,9 @@ export default function ExpensesManager() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">بدون شحنة</SelectItem>
-                  {shipments.map((s) => (
+                  {filteredShipments.map((s) => (
                     <SelectItem key={s.id} value={s.id}>
-                      {s.number} - {s.client.name}
+                      {getShipmentLabel(s)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -525,7 +652,7 @@ export default function ExpensesManager() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="expense-amount">
-                المبلغ <span className="text-red-500">*</span>
+                المبلغ (د.م.) <span className="text-red-500">*</span>
               </Label>
               <Input
                 id="expense-amount"
