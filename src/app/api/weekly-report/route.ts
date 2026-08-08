@@ -18,37 +18,39 @@ export async function GET(request: NextRequest) {
     const endDate = new Date(endDateStr)
     endDate.setDate(endDate.getDate() + 1)
 
-    // Get all vehicles
-    const vehicles = await db.vehicle.findMany({
-      orderBy: { ownerName: 'asc' },
-    })
+    const vehicles = await db.vehicle.findMany({ orderBy: { ownerName: 'asc' } })
 
-    // Get all shipments in the date range
     const shipments = await db.shipment.findMany({
-      where: {
-        date: { gte: startDate, lt: endDate },
-      },
-      include: {
-        vehicle: true,
-        orders: { include: { client: true } },
-      },
+      where: { date: { gte: startDate, lt: endDate } },
+      include: { vehicle: true, orders: { include: { client: true } } },
     })
 
-    // Get all expenses in the date range
     const expenses = await db.expense.findMany({
-      where: {
-        date: { gte: startDate, lt: endDate },
-      },
+      where: { date: { gte: startDate, lt: endDate } },
       include: { vehicle: true },
     })
 
-    // Group by owner (partner)
-    const PARTNER_NAMES = [
-      'أحمد عباد',
-      'رشيد عباد',
-      'عبد اللطيف عباد',
-      'عبد المجيد عباد',
-    ]
+    const PARTNER_NAMES = ['أحمد عباد', 'رشيد عباد', 'عبد اللطيف عباد', 'عبد المجيد عباد']
+
+    interface ShipmentDetail {
+      number: number
+      date: string
+      description: string | null
+      status: string
+      vehicleRegistration: string
+      driverName: string
+      orders: { clientName: string; packageCount: number; description: string | null }[]
+      totalPackages: number
+    }
+
+    interface ExpenseDetail {
+      number: string
+      date: string
+      type: string
+      amount: number
+      notes: string | null
+      vehicleRegistration: string
+    }
 
     const partnerMap = new Map<string, {
       ownerName: string
@@ -57,9 +59,10 @@ export async function GET(request: NextRequest) {
       orderCount: number
       totalPackages: number
       totalExpenses: number
+      shipments: ShipmentDetail[]
+      expenseDetails: ExpenseDetail[]
     }>()
 
-    // Initialize all 4 partners
     for (const name of PARTNER_NAMES) {
       partnerMap.set(name, {
         ownerName: name,
@@ -68,13 +71,13 @@ export async function GET(request: NextRequest) {
         orderCount: 0,
         totalPackages: 0,
         totalExpenses: 0,
+        shipments: [],
+        expenseDetails: [],
       })
     }
 
-    // Map vehicles to partners
     for (const vehicle of vehicles) {
-      const owner = vehicle.ownerName
-      const entry = partnerMap.get(owner)
+      const entry = partnerMap.get(vehicle.ownerName)
       if (entry) {
         entry.vehicles.push({
           id: vehicle.id,
@@ -84,36 +87,50 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Accumulate shipments and orders per partner
     for (const shipment of shipments) {
       const owner = shipment.vehicle.ownerName
       const entry = partnerMap.get(owner)
       if (entry) {
         entry.shipmentCount++
+        const orderDetails = shipment.orders.map((o) => ({
+          clientName: o.client.name,
+          packageCount: o.packageCount,
+          description: o.description,
+        }))
+        const pkgTotal = orderDetails.reduce((s, o) => s + o.packageCount, 0)
         entry.orderCount += shipment.orders.length
-        entry.totalPackages += shipment.orders.reduce((s, o) => s + o.packageCount, 0)
+        entry.totalPackages += pkgTotal
+        entry.shipments.push({
+          number: shipment.number,
+          date: shipment.date.toISOString().split('T')[0],
+          description: shipment.description,
+          status: shipment.status,
+          vehicleRegistration: shipment.vehicle.registration,
+          driverName: shipment.vehicle.driverName,
+          orders: orderDetails,
+          totalPackages: pkgTotal,
+        })
       }
     }
 
-    // Accumulate expenses per partner
     for (const expense of expenses) {
       const owner = expense.vehicle.ownerName
       const entry = partnerMap.get(owner)
       if (entry) {
         entry.totalExpenses += expense.amount
+        entry.expenseDetails.push({
+          number: expense.number,
+          date: expense.date.toISOString().split('T')[0],
+          type: expense.type,
+          amount: expense.amount,
+          notes: expense.notes,
+          vehicleRegistration: expense.vehicle.registration,
+        })
       }
     }
 
-    const partnerReports = Array.from(partnerMap.values()).map((entry) => ({
-      ownerName: entry.ownerName,
-      vehicles: entry.vehicles,
-      shipmentCount: entry.shipmentCount,
-      orderCount: entry.orderCount,
-      totalPackages: entry.totalPackages,
-      totalExpenses: entry.totalExpenses,
-    }))
+    const partnerReports = Array.from(partnerMap.values())
 
-    // Totals
     const totalShipments = shipments.length
     const totalOrders = shipments.reduce((s, sh) => s + sh.orders.length, 0)
     const totalPackages = shipments.reduce((s, sh) => s + sh.orders.reduce((ss, o) => ss + o.packageCount, 0), 0)

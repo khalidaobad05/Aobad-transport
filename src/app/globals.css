@@ -119,9 +119,26 @@
   body {
     @apply bg-background text-foreground;
   }
+  .print-only-area {
+    display: none !important;
+  }
 }
 
 @media print {
+  /* Hide everything by default */
+  body > * {
+    display: none !important;
+  }
+  /* Only show print areas */
+  .print-only-area {
+    display: block !important;
+  }
+  .print-only-area * {
+    color: black !important;
+    background: white !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+  }
   .no-print {
     display: none !important;
   }
