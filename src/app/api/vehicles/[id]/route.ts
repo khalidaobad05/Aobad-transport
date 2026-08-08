@@ -42,13 +42,14 @@ export async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { registration, driverName, phone } = body
+    const { registration, driverName, ownerName, phone } = body
 
     const vehicle = await db.vehicle.update({
       where: { id },
       data: {
         registration,
         driverName,
+        ownerName: ownerName || undefined,
         phone: phone || null,
       },
     })

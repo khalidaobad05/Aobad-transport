@@ -20,11 +20,11 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { registration, driverName, phone } = body
+    const { registration, driverName, ownerName, phone } = body
 
-    if (!registration || !driverName) {
+    if (!registration || !driverName || !ownerName) {
       return NextResponse.json(
-        { message: 'رقم التسجيل واسم السائق مطلوبان', success: false },
+        { message: 'رقم التسجيل واسم السائق واسم الصاحب مطلوبون', success: false },
         { status: 400 }
       )
     }
@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
       data: {
         registration,
         driverName,
+        ownerName,
         phone: phone || null,
       },
     })
@@ -46,3 +47,4 @@ export async function POST(request: NextRequest) {
     )
   }
 }
+// force reload

@@ -84,12 +84,13 @@ async function main() {
 
   console.log(`✅ تم إنشاء ${clients.length} عملاء`)
 
-  // ========== Vehicles ==========
+  // ========== Vehicles (4 partners + drivers) ==========
   const vehicles = await Promise.all([
     prisma.vehicle.create({
       data: {
         registration: '12345-أ-6',
         driverName: 'أحمد العلمي',
+        ownerName: 'أحمد عباد',
         phone: '0661111111',
       },
     }),
@@ -97,6 +98,7 @@ async function main() {
       data: {
         registration: '67890-ب-12',
         driverName: 'ياسين بنجلون',
+        ownerName: 'رشيد عباد',
         phone: '0662222222',
       },
     }),
@@ -104,6 +106,7 @@ async function main() {
       data: {
         registration: '13579-ج-8',
         driverName: 'محمد الفاسي',
+        ownerName: 'عبد اللطيف عباد',
         phone: '0663333333',
       },
     }),
@@ -111,6 +114,7 @@ async function main() {
       data: {
         registration: '24680-د-15',
         driverName: 'كريم الحسني',
+        ownerName: 'عبد المجيد عباد',
         phone: '0664444444',
       },
     }),

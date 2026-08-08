@@ -7,6 +7,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -24,22 +31,32 @@ import {
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 
+const PARTNERS = [
+  'أحمد عباد',
+  'رشيد عباد',
+  'عبد اللطيف عباد',
+  'عبد المجيد عباد',
+];
+
 interface Vehicle {
-  id: number;
+  id: string;
   registration: string;
   driverName: string;
+  ownerName: string;
   phone?: string | null;
 }
 
 interface VehicleFormData {
   registration: string;
   driverName: string;
+  ownerName: string;
   phone: string;
 }
 
 const emptyForm: VehicleFormData = {
   registration: '',
   driverName: '',
+  ownerName: '',
   phone: '',
 };
 
@@ -50,7 +67,7 @@ export default function VehiclesManager() {
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
   const [form, setForm] = useState<VehicleFormData>(emptyForm);
   const [submitting, setSubmitting] = useState(false);
-  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const fetchVehicles = useCallback(async () => {
     try {
@@ -83,6 +100,7 @@ export default function VehiclesManager() {
     setForm({
       registration: vehicle.registration,
       driverName: vehicle.driverName,
+      ownerName: vehicle.ownerName,
       phone: vehicle.phone ?? '',
     });
     setDialogOpen(true);
@@ -95,7 +113,11 @@ export default function VehiclesManager() {
       return;
     }
     if (!form.driverName.trim()) {
-      toast.error('اسم السائق/الشريك مطلوب');
+      toast.error('اسم السائق مطلوب');
+      return;
+    }
+    if (!form.ownerName.trim()) {
+      toast.error('اسم صاحب المركبة مطلوب');
       return;
     }
 
@@ -104,6 +126,7 @@ export default function VehiclesManager() {
       const body = {
         registration: form.registration.trim(),
         driverName: form.driverName.trim(),
+        ownerName: form.ownerName.trim(),
         phone: form.phone.trim() || undefined,
       };
 
@@ -134,7 +157,7 @@ export default function VehiclesManager() {
     }
   }
 
-  async function handleDelete(id: number) {
+  async function handleDelete(id: string) {
     try {
       setDeletingId(id);
       const res = await fetch(`/api/vehicles/${id}`, { method: 'DELETE' });
@@ -150,7 +173,6 @@ export default function VehiclesManager() {
 
   return (
     <div className="space-y-6">
-      {/* Header with Add Button */}
       <div className="flex items-center justify-between">
         <Button
           onClick={openCreateDialog}
@@ -161,7 +183,6 @@ export default function VehiclesManager() {
         </Button>
       </div>
 
-      {/* Vehicles Table */}
       <Card className="bg-white dark:bg-gray-900 border shadow-sm">
         <CardContent className="p-0">
           {loading ? (
@@ -176,7 +197,8 @@ export default function VehiclesManager() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>رقم التسجيل</TableHead>
-                    <TableHead>اسم السائق/الشريك</TableHead>
+                    <TableHead>صاحب المركبة (الشريك)</TableHead>
+                    <TableHead>اسم السائق</TableHead>
                     <TableHead>الهاتف</TableHead>
                     <TableHead>الإجراءات</TableHead>
                   </TableRow>
@@ -186,6 +208,11 @@ export default function VehiclesManager() {
                     <TableRow key={vehicle.id}>
                       <TableCell className="font-medium">
                         {vehicle.registration}
+                      </TableCell>
+                      <TableCell>
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                          {vehicle.ownerName}
+                        </span>
                       </TableCell>
                       <TableCell>{vehicle.driverName}</TableCell>
                       <TableCell>{vehicle.phone ?? '—'}</TableCell>
@@ -232,7 +259,6 @@ export default function VehiclesManager() {
         </CardContent>
       </Card>
 
-      {/* Create / Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
@@ -251,13 +277,33 @@ export default function VehiclesManager() {
                 onChange={(e) =>
                   setForm({ ...form, registration: e.target.value })
                 }
-                placeholder="أدخل رقم التسجيل"
+                placeholder="مثال: 12345-أ-6"
                 required
               />
             </div>
             <div className="space-y-2">
+              <Label htmlFor="vehicle-owner">
+                صاحب المركبة (الشريك) <span className="text-red-500">*</span>
+              </Label>
+              <Select
+                value={form.ownerName}
+                onValueChange={(val) => setForm({ ...form, ownerName: val })}
+              >
+                <SelectTrigger id="vehicle-owner">
+                  <SelectValue placeholder="اختر صاحب المركبة" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PARTNERS.map((p) => (
+                    <SelectItem key={p} value={p}>
+                      {p}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="vehicle-driver">
-                اسم السائق/الشريك <span className="text-red-500">*</span>
+                اسم السائق <span className="text-red-500">*</span>
               </Label>
               <Input
                 id="vehicle-driver"
@@ -265,7 +311,7 @@ export default function VehiclesManager() {
                 onChange={(e) =>
                   setForm({ ...form, driverName: e.target.value })
                 }
-                placeholder="أدخل اسم السائق أو الشريك"
+                placeholder="أدخل اسم السائق"
                 required
               />
             </div>

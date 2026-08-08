@@ -26,7 +26,8 @@ model Client {
 model Vehicle {
   id           String   @id @default(cuid())
   registration String   @unique // رقم التسجيل
-  driverName   String   // اسم صاحب المركبة / الشريك
+  driverName   String   // اسم السائق
+  ownerName    String   // اسم صاحب المركبة / الشريك
   phone        String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

@@ -14,43 +14,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 
 interface Client {
   id: string;
   name: string;
-  phone: string | null;
-  address: string | null;
-  ifu: string | null;
-  ice: string | null;
-  rc: string | null;
 }
 
-interface VehicleInfo {
-  id: string;
-  registration: string;
-  driverName: string;
-}
-
-interface ShipmentRow {
+interface ShipmentInfo {
   number: number;
-  description: string | null;
   packageCount: number;
-  unitPrice: number;
-  totalAmount: number;
-  vehicle: VehicleInfo;
+  vehicle: { registration: string; driverName: string; ownerName: string };
 }
 
 interface VehicleGroup {
-  vehicle: VehicleInfo;
-  shipments: ShipmentRow[];
+  vehicle: { registration: string; driverName: string; ownerName: string };
+  shipments: ShipmentInfo[];
   totalPackages: number;
   totalAmount: number;
 }
@@ -70,18 +48,6 @@ function formatDate(dateStr: string): string {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}/${m}/${day}`;
-}
-
-function formatCurrency(amount: number): string {
-  return amount.toLocaleString('ar-MA') + ' د.م.';
-}
-
-function generateNoteNumber(dateStr: string): string {
-  const d = new Date(dateStr);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `BL-${y}${m}${day}`;
 }
 
 export default function DeliveryNoteGenerator() {
@@ -137,24 +103,6 @@ export default function DeliveryNoteGenerator() {
     }
   }
 
-  function handlePrint() {
-    window.print();
-  }
-
-  // Flatten all shipments from all vehicle groups into a single list
-  function getFlatShipments(): (ShipmentRow & { rowIndex: number })[] {
-    if (!noteData) return [];
-    const flat: (ShipmentRow & { rowIndex: number })[] = [];
-    noteData.vehicleGroups.forEach((group) => {
-      group.shipments.forEach((shipment) => {
-        flat.push({ ...shipment, vehicle: group.vehicle, rowIndex: flat.length + 1 });
-      });
-    });
-    return flat;
-  }
-
-  const flatShipments = getFlatShipments();
-
   return (
     <div className="space-y-6">
       {/* Form Section */}
@@ -177,9 +125,7 @@ export default function DeliveryNoteGenerator() {
               />
             </div>
             <div className="space-y-2">
-              <Label>
-                اسم الزبون <span className="text-red-500">*</span>
-              </Label>
+              <Label>اسم الزبون <span className="text-red-500">*</span></Label>
               <Select
                 value={selectedClientId}
                 onValueChange={setSelectedClientId}
@@ -211,12 +157,12 @@ export default function DeliveryNoteGenerator() {
         </CardContent>
       </Card>
 
-      {/* Delivery Note Print View */}
+      {/* Delivery Note Print View - SIMPLIFIED */}
       {noteData && (
         <div className="space-y-4">
           <div className="flex justify-end no-print">
             <Button
-              onClick={handlePrint}
+              onClick={() => window.print()}
               variant="outline"
               className="border-amber-500 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20"
             >
@@ -227,114 +173,97 @@ export default function DeliveryNoteGenerator() {
 
           <div
             id="delivery-note-print"
-            className="border-2 border-gray-300 p-8 bg-white dark:bg-gray-900"
+            className="border-2 border-gray-400 p-10 bg-white"
+            style={{ maxWidth: '700px', margin: '0 auto' }}
           >
             {/* Company Header */}
-            <div className="text-center mb-6">
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+            <div className="text-center mb-10">
+              <h1 className="text-3xl font-bold text-gray-900" style={{ letterSpacing: '2px' }}>
                 شركة عباد للنقل
               </h1>
-              <p className="text-lg font-semibold text-gray-700 dark:text-gray-300 mt-2">
-                وصل تسليم شحنة (Bon de Livraison)
-              </p>
+              <div className="w-32 h-0.5 bg-gray-400 mx-auto mt-3" />
             </div>
 
-            {/* Info Rows */}
-            <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm mb-6 border-b border-gray-300 pb-4">
-              <div className="flex gap-2">
-                <span className="font-semibold text-gray-700 dark:text-gray-300">رقم الوصل:</span>
-                <span className="text-gray-900 dark:text-gray-100">{generateNoteNumber(noteData.date)}</span>
+            {/* Title */}
+            <div className="text-center mb-8">
+              <h2 className="text-xl font-bold text-gray-800 underline underline-offset-4">
+                وصل تسليم
+              </h2>
+            </div>
+
+            {/* Client & Date Info - Simple */}
+            <div className="mb-8 space-y-3 text-base">
+              <div className="flex gap-4">
+                <span className="font-bold text-gray-700 min-w-[100px]">التاريخ:</span>
+                <span className="text-gray-900">{formatDate(noteData.date)}</span>
               </div>
-              <div className="flex gap-2">
-                <span className="font-semibold text-gray-700 dark:text-gray-300">التاريخ:</span>
-                <span className="text-gray-900 dark:text-gray-100">{formatDate(noteData.date)}</span>
-              </div>
-              <div className="flex gap-2">
-                <span className="font-semibold text-gray-700 dark:text-gray-300">اسم الزبون:</span>
-                <span className="text-gray-900 dark:text-gray-100">{noteData.client.name}</span>
-              </div>
-              <div className="flex gap-2">
-                <span className="font-semibold text-gray-700 dark:text-gray-300">الهاتف:</span>
-                <span className="text-gray-900 dark:text-gray-100">{noteData.client.phone || '—'}</span>
-              </div>
-              <div className="flex gap-2">
-                <span className="font-semibold text-gray-700 dark:text-gray-300">العنوان:</span>
-                <span className="text-gray-900 dark:text-gray-100">{noteData.client.address || '—'}</span>
-              </div>
-              <div className="flex gap-2">
-                <span className="font-semibold text-gray-700 dark:text-gray-300">IFU:</span>
-                <span className="text-gray-900 dark:text-gray-100">{noteData.client.ifu || '—'}</span>
-              </div>
-              <div className="flex gap-2">
-                <span className="font-semibold text-gray-700 dark:text-gray-300">ICE:</span>
-                <span className="text-gray-900 dark:text-gray-100">{noteData.client.ice || '—'}</span>
-              </div>
-              <div className="flex gap-2">
-                <span className="font-semibold text-gray-700 dark:text-gray-300">RC:</span>
-                <span className="text-gray-900 dark:text-gray-100">{noteData.client.rc || '—'}</span>
+              <div className="flex gap-4">
+                <span className="font-bold text-gray-700 min-w-[100px]">اسم الزبون:</span>
+                <span className="text-gray-900 font-semibold">{noteData.client.name}</span>
               </div>
             </div>
 
-            {/* Shipments Table */}
-            <div className="overflow-x-auto mb-6">
+            {/* Shipments detail per vehicle */}
+            <div className="mb-8">
               <table className="w-full text-sm border-collapse">
                 <thead>
-                  <tr className="bg-amber-50 dark:bg-amber-900/20">
-                    <th className="border border-gray-300 px-3 py-2 font-semibold text-gray-700 dark:text-gray-300">م</th>
-                    <th className="border border-gray-300 px-3 py-2 font-semibold text-gray-700 dark:text-gray-300">وصف الشحنة</th>
-                    <th className="border border-gray-300 px-3 py-2 font-semibold text-gray-700 dark:text-gray-300">المركبة</th>
-                    <th className="border border-gray-300 px-3 py-2 font-semibold text-gray-700 dark:text-gray-300">السائق</th>
-                    <th className="border border-gray-300 px-3 py-2 font-semibold text-gray-700 dark:text-gray-300 text-center">عدد الطرود</th>
-                    <th className="border border-gray-300 px-3 py-2 font-semibold text-gray-700 dark:text-gray-300 text-center">سعر الطرد</th>
-                    <th className="border border-gray-300 px-3 py-2 font-semibold text-gray-700 dark:text-gray-300 text-center">المبلغ</th>
+                  <tr className="bg-gray-100">
+                    <th className="border border-gray-400 px-3 py-2 font-bold text-gray-700">م</th>
+                    <th className="border border-gray-400 px-3 py-2 font-bold text-gray-700">المركبة</th>
+                    <th className="border border-gray-400 px-3 py-2 font-bold text-gray-700">السائق</th>
+                    <th className="border border-gray-400 px-3 py-2 font-bold text-gray-700 text-center">عدد الطلبيات</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {flatShipments.map((shipment) => (
-                    <tr key={shipment.number} className="even:bg-gray-50 dark:even:bg-gray-800/50">
-                      <td className="border border-gray-300 px-3 py-2 text-center">{shipment.rowIndex}</td>
-                      <td className="border border-gray-300 px-3 py-2">{shipment.description || 'شحنة بضائع'}</td>
-                      <td className="border border-gray-300 px-3 py-2">{shipment.vehicle.registration}</td>
-                      <td className="border border-gray-300 px-3 py-2">{shipment.vehicle.driverName}</td>
-                      <td className="border border-gray-300 px-3 py-2 text-center">{shipment.packageCount}</td>
-                      <td className="border border-gray-300 px-3 py-2 text-center">{formatCurrency(shipment.unitPrice)}</td>
-                      <td className="border border-gray-300 px-3 py-2 text-center">{formatCurrency(shipment.totalAmount)}</td>
+                  {noteData.vehicleGroups.map((group, gi) => (
+                    <tr key={gi}>
+                      <td className="border border-gray-400 px-3 py-2 text-center">{gi + 1}</td>
+                      <td className="border border-gray-400 px-3 py-2">{group.vehicle.registration}</td>
+                      <td className="border border-gray-400 px-3 py-2">{group.vehicle.driverName}</td>
+                      <td className="border border-gray-400 px-3 py-2 text-center font-bold text-lg">
+                        {group.totalPackages}
+                      </td>
                     </tr>
                   ))}
-                  {flatShipments.length === 0 && (
+                  {noteData.vehicleGroups.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="border border-gray-300 px-3 py-6 text-center text-gray-500">
-                        لا توجد شحنات
+                      <td colSpan={4} className="border border-gray-400 px-3 py-6 text-center text-gray-500">
+                        لا توجد شحنات في هذا اليوم
                       </td>
                     </tr>
                   )}
                 </tbody>
                 <tfoot>
-                  <tr className="bg-amber-50 dark:bg-amber-900/20 font-bold">
-                    <td colSpan={4} className="border border-gray-300 px-3 py-2 text-left">
-                      المجموع الصافي الإجمالي:
+                  <tr className="bg-gray-100 font-bold">
+                    <td colSpan={3} className="border border-gray-400 px-3 py-2 text-left">
+                      المجموع الكلي للطلبيات:
                     </td>
-                    <td className="border border-gray-300 px-3 py-2 text-center">
+                    <td className="border border-gray-400 px-3 py-2 text-center text-xl">
                       {noteData.totalPackages}
-                    </td>
-                    <td className="border border-gray-300 px-3 py-2 text-center">—</td>
-                    <td className="border border-gray-300 px-3 py-2 text-center text-lg">
-                      {formatCurrency(noteData.totalAmount)}
                     </td>
                   </tr>
                 </tfoot>
               </table>
             </div>
 
+            {/* Empty amount field for manual filling */}
+            <div className="mb-10 flex items-center gap-4 text-base">
+              <span className="font-bold text-gray-700 min-w-[180px]">المبلغ الواجب أدائه:</span>
+              <div className="border-b-2 border-dotted border-gray-400 flex-1 pb-1" style={{ minHeight: '30px' }}>
+                {/* فارغ - يملأ يدوياً */}
+              </div>
+              <span className="text-gray-500 text-sm">د.م.</span>
+            </div>
+
             {/* Signature Lines */}
-            <div className="grid grid-cols-2 gap-8 mt-12 pt-4">
+            <div className="grid grid-cols-2 gap-12 mt-16">
               <div className="text-center">
-                <p className="font-semibold text-gray-700 dark:text-gray-300 mb-2">توقيع واستلام الزبون</p>
-                <div className="border-b border-gray-400 dark:border-gray-600 pb-1">&nbsp;</div>
+                <p className="font-bold text-gray-700 mb-3">توقيع الزبون</p>
+                <div className="border-b-2 border-gray-400 pb-1">&nbsp;</div>
               </div>
               <div className="text-center">
-                <p className="font-semibold text-gray-700 dark:text-gray-300 mb-2">توقيع الناقل</p>
-                <div className="border-b border-gray-400 dark:border-gray-600 pb-1">&nbsp;</div>
+                <p className="font-bold text-gray-700 mb-3">توقيع الناقل</p>
+                <div className="border-b-2 border-gray-400 pb-1">&nbsp;</div>
               </div>
             </div>
           </div>

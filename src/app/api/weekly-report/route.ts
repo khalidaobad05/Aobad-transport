@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
 
     // Get all vehicles
     const vehicles = await db.vehicle.findMany({
-      orderBy: { driverName: 'asc' },
+      orderBy: { ownerName: 'asc' },
     })
 
     // Get all shipments in the date range
@@ -39,38 +39,66 @@ export async function GET(request: NextRequest) {
       include: { vehicle: true },
     })
 
-    // Build report per vehicle
-    const vehicleReports = vehicles.map((vehicle) => {
-      const vehicleShipments = shipments.filter(
-        (s) => s.vehicleId === vehicle.id
-      )
-      const vehicleExpenses = expenses.filter(
-        (e) => e.vehicleId === vehicle.id
-      )
+    // Group by owner (partner)
+    const ownerMap = new Map<string, {
+      ownerName: string
+      vehicles: { id: string; registration: string; driverName: string }[]
+      shipmentCount: number
+      totalIncome: number
+      totalExpenses: number
+    }>()
 
-      const totalIncome = vehicleShipments.reduce(
-        (sum, s) => sum + s.totalAmount,
-        0
-      )
-      const totalExpenses = vehicleExpenses.reduce(
-        (sum, e) => sum + e.amount,
-        0
-      )
-      const netProfit = totalIncome - totalExpenses
-
-      return {
-        vehicle: {
-          id: vehicle.id,
-          registration: vehicle.registration,
-          driverName: vehicle.driverName,
-        },
-        shipmentCount: vehicleShipments.length,
-        expenseCount: vehicleExpenses.length,
-        totalIncome,
-        totalExpenses,
-        netProfit,
+    for (const vehicle of vehicles) {
+      const owner = vehicle.ownerName || vehicle.driverName
+      if (!ownerMap.has(owner)) {
+        ownerMap.set(owner, {
+          ownerName: owner,
+          vehicles: [],
+          shipmentCount: 0,
+          totalIncome: 0,
+          totalExpenses: 0,
+        })
       }
-    })
+      const entry = ownerMap.get(owner)!
+      entry.vehicles.push({
+        id: vehicle.id,
+        registration: vehicle.registration,
+        driverName: vehicle.driverName,
+      })
+    }
+
+    // Accumulate shipments per owner
+    for (const shipment of shipments) {
+      const vehicle = vehicles.find((v) => v.id === shipment.vehicleId)
+      if (!vehicle) continue
+      const owner = vehicle.ownerName || vehicle.driverName
+      const entry = ownerMap.get(owner)
+      if (entry) {
+        entry.shipmentCount++
+        entry.totalIncome += shipment.totalAmount
+      }
+    }
+
+    // Accumulate expenses per owner
+    for (const expense of expenses) {
+      const vehicle = vehicles.find((v) => v.id === expense.vehicleId)
+      if (!vehicle) continue
+      const owner = vehicle.ownerName || vehicle.driverName
+      const entry = ownerMap.get(owner)
+      if (entry) {
+        entry.totalExpenses += expense.amount
+      }
+    }
+
+    // Build partner reports
+    const partnerReports = Array.from(ownerMap.values()).map((entry) => ({
+      ownerName: entry.ownerName,
+      vehicles: entry.vehicles,
+      shipmentCount: entry.shipmentCount,
+      totalIncome: entry.totalIncome,
+      totalExpenses: entry.totalExpenses,
+      netProfit: entry.totalIncome - entry.totalExpenses,
+    }))
 
     // Totals
     const totalIncome = shipments.reduce((sum, s) => sum + s.totalAmount, 0)
@@ -81,7 +109,7 @@ export async function GET(request: NextRequest) {
       data: {
         startDate: startDateStr,
         endDate: endDateStr,
-        vehicleReports,
+        partnerReports,
         summary: {
           totalShipments: shipments.length,
           totalExpensesCount: expenses.length,

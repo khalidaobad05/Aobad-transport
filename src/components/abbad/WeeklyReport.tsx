@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { BarChart3, Loader2, TrendingUp, TrendingDown } from 'lucide-react';
+import { BarChart3, Loader2, TrendingUp, TrendingDown, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,15 +15,18 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
 
-interface VehicleReport {
-  vehicle: {
-    id: string;
-    registration: string;
-    driverName: string;
-  };
+interface VehicleInfo {
+  id: string;
+  registration: string;
+  driverName: string;
+}
+
+interface PartnerReport {
+  ownerName: string;
+  vehicles: VehicleInfo[];
   shipmentCount: number;
-  expenseCount: number;
   totalIncome: number;
   totalExpenses: number;
   netProfit: number;
@@ -40,7 +43,7 @@ interface ReportSummary {
 interface ReportData {
   startDate: string;
   endDate: string;
-  vehicleReports: VehicleReport[];
+  partnerReports: PartnerReport[];
   summary: ReportSummary;
 }
 
@@ -53,6 +56,7 @@ export default function WeeklyReport() {
   const [endDate, setEndDate] = useState('');
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<ReportData | null>(null);
+  const [expandedPartner, setExpandedPartner] = useState<string | null>(null);
 
   async function handleGenerate() {
     if (!startDate) {
@@ -66,10 +70,7 @@ export default function WeeklyReport() {
 
     try {
       setLoading(true);
-      const params = new URLSearchParams({
-        startDate,
-        endDate,
-      });
+      const params = new URLSearchParams({ startDate, endDate });
       const res = await fetch(`/api/weekly-report?${params.toString()}`);
       if (!res.ok) {
         const err = await res.json().catch(() => ({ message: 'فشل في تحميل التقرير' }));
@@ -77,6 +78,7 @@ export default function WeeklyReport() {
       }
       const json = await res.json();
       setReport(json.data);
+      setExpandedPartner(null);
       toast.success('تم تحميل التقرير بنجاح');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'حدث خطأ غير متوقع');
@@ -87,44 +89,26 @@ export default function WeeklyReport() {
 
   return (
     <div className="space-y-6">
-      {/* Filter Section */}
+      {/* Filter */}
       <Card className="bg-white dark:bg-gray-900 border shadow-sm">
         <CardHeader className="p-4 pb-0">
           <CardTitle className="text-lg flex items-center gap-2">
             <BarChart3 className="size-5 text-amber-500" />
-            التقرير المالي
+            الحصيلة الأسبوعية حسب الشركاء
           </CardTitle>
         </CardHeader>
         <CardContent className="p-4">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="wr-start">
-                من تاريخ
-              </Label>
-              <Input
-                id="wr-start"
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-              />
+              <Label htmlFor="wr-start">من تاريخ</Label>
+              <Input id="wr-start" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="wr-end">
-                إلى تاريخ
-              </Label>
-              <Input
-                id="wr-end"
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-              />
+              <Label htmlFor="wr-end">إلى تاريخ</Label>
+              <Input id="wr-end" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
             </div>
             <div className="flex items-end">
-              <Button
-                onClick={handleGenerate}
-                disabled={loading}
-                className="bg-amber-500 hover:bg-amber-600 text-white w-full"
-              >
+              <Button onClick={handleGenerate} disabled={loading} className="bg-amber-500 hover:bg-amber-600 text-white w-full">
                 {loading && <Loader2 className="size-4 animate-spin ml-2" />}
                 <BarChart3 className="size-4 ml-2" />
                 عرض التقرير
@@ -134,7 +118,6 @@ export default function WeeklyReport() {
         </CardContent>
       </Card>
 
-      {/* Report Content */}
       {report && (
         <>
           {/* Summary Cards */}
@@ -145,9 +128,7 @@ export default function WeeklyReport() {
                 <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
                   {formatCurrency(report.summary.totalIncome)}
                 </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {report.summary.totalShipments} رحلة
-                </p>
+                <p className="text-xs text-muted-foreground mt-1">{report.summary.totalShipments} رحلة</p>
               </CardContent>
             </Card>
             <Card className="bg-white dark:bg-gray-900 border shadow-sm">
@@ -156,9 +137,7 @@ export default function WeeklyReport() {
                 <p className="text-2xl font-bold text-red-600 dark:text-red-400">
                   {formatCurrency(report.summary.totalExpenses)}
                 </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {report.summary.totalExpensesCount} مصروف
-                </p>
+                <p className="text-xs text-muted-foreground mt-1">{report.summary.totalExpensesCount} مصروف</p>
               </CardContent>
             </Card>
             <Card className="bg-white dark:bg-gray-900 border shadow-sm">
@@ -170,13 +149,7 @@ export default function WeeklyReport() {
                   ) : (
                     <TrendingDown className="size-5 text-red-500" />
                   )}
-                  <p
-                    className={`text-2xl font-bold ${
-                      report.summary.totalNetProfit >= 0
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : 'text-red-600 dark:text-red-400'
-                    }`}
-                  >
+                  <p className={`text-2xl font-bold ${report.summary.totalNetProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
                     {formatCurrency(report.summary.totalNetProfit)}
                   </p>
                 </div>
@@ -184,99 +157,102 @@ export default function WeeklyReport() {
             </Card>
           </div>
 
-          {/* Vehicle Report Table */}
+          {/* Partner Report Table */}
           <Card className="bg-white dark:bg-gray-900 border shadow-sm">
             <CardHeader className="p-4 pb-0">
-              <CardTitle className="text-lg">تفاصيل حسب المركبة</CardTitle>
+              <CardTitle className="text-lg">تفاصيل حسب الشريك (صاحب المركبة)</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              {report.vehicleReports.length > 0 ? (
-                <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>السائق</TableHead>
-                        <TableHead>رقم المركبة</TableHead>
-                        <TableHead className="text-center">عدد الرحلات</TableHead>
-                        <TableHead>مجموع المداخيل</TableHead>
-                        <TableHead>مجموع المصاريف</TableHead>
-                        <TableHead>الربح الصافي</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {report.vehicleReports.map((vr) => (
-                        <TableRow key={vr.vehicle.id}>
-                          <TableCell className="font-medium">
-                            {vr.vehicle.driverName}
-                          </TableCell>
-                          <TableCell>{vr.vehicle.registration}</TableCell>
-                          <TableCell className="text-center">
-                            {vr.shipmentCount}
-                          </TableCell>
-                          <TableCell className="text-emerald-600 dark:text-emerald-400">
-                            {formatCurrency(vr.totalIncome)}
-                          </TableCell>
-                          <TableCell className="text-red-600 dark:text-red-400">
-                            {formatCurrency(vr.totalExpenses)}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-1">
-                              {vr.netProfit >= 0 ? (
-                                <>
+              {report.partnerReports.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>الشريك</TableHead>
+                      <TableHead>المركبات</TableHead>
+                      <TableHead className="text-center">عدد الرحلات</TableHead>
+                      <TableHead>المداخيل</TableHead>
+                      <TableHead>المصاريف</TableHead>
+                      <TableHead>الربح الصافي</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {report.partnerReports.map((pr) => {
+                      const isExpanded = expandedPartner === pr.ownerName;
+                      return (
+                        <>
+                          <TableRow
+                            key={pr.ownerName}
+                            className="cursor-pointer hover:bg-amber-50/50 dark:hover:bg-amber-900/10"
+                            onClick={() => setExpandedPartner(isExpanded ? null : pr.ownerName)}
+                          >
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                {isExpanded ? <ChevronUp className="size-4 text-amber-500" /> : <ChevronDown className="size-4 text-muted-foreground" />}
+                                <span className="font-bold text-amber-700 dark:text-amber-400">{pr.ownerName}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <span className="text-muted-foreground text-sm">
+                                {pr.vehicles.map((v) => v.registration).join('، ')}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-center font-semibold">{pr.shipmentCount}</TableCell>
+                            <TableCell className="text-emerald-600 dark:text-emerald-400">{formatCurrency(pr.totalIncome)}</TableCell>
+                            <TableCell className="text-red-600 dark:text-red-400">{formatCurrency(pr.totalExpenses)}</TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                {pr.netProfit >= 0 ? (
                                   <TrendingUp className="size-3 text-emerald-500" />
-                                  <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
-                                    {formatCurrency(vr.netProfit)}
-                                  </span>
-                                </>
-                              ) : (
-                                <>
+                                ) : (
                                   <TrendingDown className="size-3 text-red-500" />
-                                  <span className="text-red-600 dark:text-red-400 font-semibold">
-                                    {formatCurrency(vr.netProfit)}
-                                  </span>
-                                </>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                    <tfoot>
-                      <TableRow className="bg-amber-50 dark:bg-amber-900/20 font-bold">
-                        <TableCell>المجموع</TableCell>
-                        <TableCell>—</TableCell>
-                        <TableCell className="text-center">
-                          {report.summary.totalShipments}
-                        </TableCell>
-                        <TableCell className="text-emerald-600 dark:text-emerald-400">
-                          {formatCurrency(report.summary.totalIncome)}
-                        </TableCell>
-                        <TableCell className="text-red-600 dark:text-red-400">
-                          {formatCurrency(report.summary.totalExpenses)}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1">
-                            {report.summary.totalNetProfit >= 0 ? (
-                              <>
-                                <TrendingUp className="size-3 text-emerald-500" />
-                                <span className="text-emerald-600 dark:text-emerald-400 text-lg">
-                                  {formatCurrency(report.summary.totalNetProfit)}
+                                )}
+                                <span className={`font-semibold ${pr.netProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                                  {formatCurrency(pr.netProfit)}
                                 </span>
-                              </>
-                            ) : (
-                              <>
-                                <TrendingDown className="size-3 text-red-500" />
-                                <span className="text-red-600 dark:text-red-400 text-lg">
-                                  {formatCurrency(report.summary.totalNetProfit)}
-                                </span>
-                              </>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    </tfoot>
-                  </Table>
-                </div>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                          {/* Expanded: show vehicles detail */}
+                          {isExpanded && (
+                            <TableRow key={`${pr.ownerName}-detail`}>
+                              <TableCell colSpan={6} className="bg-amber-50/30 dark:bg-amber-900/10 px-8 py-3">
+                                <div className="text-sm space-y-1">
+                                  {pr.vehicles.map((v) => (
+                                    <div key={v.id} className="flex items-center gap-3">
+                                      <Badge variant="outline" className="font-mono text-xs">{v.registration}</Badge>
+                                      <span className="text-muted-foreground">السائق: {v.driverName}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </>
+                      );
+                    })}
+                  </TableBody>
+                  <tfoot>
+                    <TableRow className="bg-amber-50 dark:bg-amber-900/20 font-bold">
+                      <TableCell>المجموع</TableCell>
+                      <TableCell>—</TableCell>
+                      <TableCell className="text-center">{report.summary.totalShipments}</TableCell>
+                      <TableCell className="text-emerald-600 dark:text-emerald-400">{formatCurrency(report.summary.totalIncome)}</TableCell>
+                      <TableCell className="text-red-600 dark:text-red-400">{formatCurrency(report.summary.totalExpenses)}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          {report.summary.totalNetProfit >= 0 ? (
+                            <TrendingUp className="size-3 text-emerald-500" />
+                          ) : (
+                            <TrendingDown className="size-3 text-red-500" />
+                          )}
+                          <span className={`text-lg ${report.summary.totalNetProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                            {formatCurrency(report.summary.totalNetProfit)}
+                          </span>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  </tfoot>
+                </Table>
               ) : (
                 <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
                   <p className="text-base">لا توجد بيانات في الفترة المحددة</p>
