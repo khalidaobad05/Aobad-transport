@@ -12,6 +12,28 @@ async function main() {
   await prisma.invoice.deleteMany()
   await prisma.vehicle.deleteMany()
   await prisma.client.deleteMany()
+  await prisma.employee.deleteMany()
+
+  // ========== Employees ==========
+  await prisma.employee.create({
+    data: {
+      fullName: 'المسير',
+      accessCode: 'ADMIN',
+      role: 'مسير',
+      active: true,
+    },
+  })
+
+  await prisma.employee.create({
+    data: {
+      fullName: 'موظف تجريبي',
+      accessCode: '1234',
+      role: 'موظف',
+      active: true,
+    },
+  })
+
+  console.log('✅ تم إنشاء 2 موظفين')
 
   // ========== Clients ==========
   const clients = await Promise.all([
