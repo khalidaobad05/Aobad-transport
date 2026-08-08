@@ -1,12 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Loader2, Search, X, Package, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, Search, X, Package, ChevronDown, ChevronUp, UserPlus, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -48,6 +47,7 @@ interface Vehicle {
 interface OrderItem {
   id?: string;
   clientId: string;
+  clientName: string; // for display; can be new name or existing name
   packageCount: number;
   description: string;
   client?: Client;
@@ -86,6 +86,7 @@ const STATUS_FORM_OPTIONS = [
 
 const emptyOrder: OrderItem = {
   clientId: '',
+  clientName: '',
   packageCount: 0,
   description: '',
 };
@@ -139,6 +140,191 @@ function getStatusBadge(status: string) {
   }
 }
 
+// ========== Client Autocomplete Input ==========
+function ClientAutocomplete({
+  value,
+  onChange,
+  clients,
+}: {
+  value: string;
+  onChange: (clientId: string, clientName: string) => void;
+  clients: Client[];
+}) {
+  const [inputValue, setInputValue] = useState(value);
+  const [isOpen, setIsOpen] = useState(false);
+  const [highlightIndex, setHighlightIndex] = useState(-1);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Sync external value changes (e.g. edit mode)
+  useEffect(() => {
+    setInputValue(value);
+  }, [value]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Filter clients based on input
+  const filteredClients = inputValue.trim()
+    ? clients.filter((c) =>
+        c.name.toLowerCase().includes(inputValue.trim().toLowerCase())
+      )
+    : clients;
+
+  // Show top 8 results
+  const shownClients = filteredClients.slice(0, 8);
+
+  // Check if input exactly matches an existing client
+  const exactMatch = clients.find(
+    (c) => c.name.toLowerCase() === inputValue.trim().toLowerCase()
+  );
+
+  const isNewClient = inputValue.trim().length > 0 && !exactMatch;
+
+  function handleSelect(client: Client) {
+    setInputValue(client.name);
+    onChange(client.id, client.name);
+    setIsOpen(false);
+    setHighlightIndex(-1);
+  }
+
+  function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const val = e.target.value;
+    setInputValue(val);
+    onChange('', val); // Clear clientId while typing
+    setIsOpen(true);
+    setHighlightIndex(-1);
+  }
+
+  function handleAddNew() {
+    if (!inputValue.trim()) return;
+    // clientId stays empty - will be resolved on submit
+    onChange('', inputValue.trim());
+    setIsOpen(false);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    const totalItems = shownClients.length + (isNewClient ? 1 : 0);
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightIndex((prev) => (prev < totalItems - 1 ? prev + 1 : 0));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightIndex((prev) => (prev > 0 ? prev - 1 : totalItems - 1));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (highlightIndex >= 0 && highlightIndex < shownClients.length) {
+        handleSelect(shownClients[highlightIndex]);
+      } else if (highlightIndex === shownClients.length && isNewClient) {
+        handleAddNew();
+      }
+    } else if (e.key === 'Escape') {
+      setIsOpen(false);
+    } else if (e.key === 'Tab') {
+      // If there's exactly one match, select it
+      if (shownClients.length === 1 && !isNewClient) {
+        e.preventDefault();
+        handleSelect(shownClients[0]);
+      } else if (exactMatch) {
+        e.preventDefault();
+        handleSelect(exactMatch);
+      }
+    }
+  }
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <div className="relative">
+        <Input
+          ref={inputRef}
+          type="text"
+          value={inputValue}
+          onChange={handleInputChange}
+          onFocus={() => setIsOpen(true)}
+          onKeyDown={handleKeyDown}
+          placeholder="اكتب اسم الزبون..."
+          className="w-full pr-8"
+          autoComplete="off"
+        />
+        {inputValue && (
+          <button
+            type="button"
+            onClick={() => {
+              setInputValue('');
+              onChange('', '');
+              inputRef.current?.focus();
+            }}
+            className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          >
+            <X className="size-3.5" />
+          </button>
+        )}
+      </div>
+
+      {/* Dropdown */}
+      {isOpen && (shownClients.length > 0 || isNewClient) && (
+        <div className="absolute z-50 top-full mt-1 w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+          {shownClients.map((client, idx) => (
+            <button
+              key={client.id}
+              type="button"
+              onClick={() => handleSelect(client)}
+              onMouseEnter={() => setHighlightIndex(idx)}
+              className={`
+                w-full text-right px-3 py-2 text-sm flex items-center gap-2 transition-colors
+                ${idx === highlightIndex
+                  ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-900 dark:text-amber-100'
+                  : 'hover:bg-gray-50 dark:hover:bg-gray-800'
+                }
+              `}
+            >
+              <span className="truncate flex-1">{client.name}</span>
+              {exactMatch?.id === client.id && (
+                <Check className="size-3.5 text-emerald-500 shrink-0" />
+              )}
+            </button>
+          ))}
+          {isNewClient && (
+            <button
+              type="button"
+              onClick={handleAddNew}
+              onMouseEnter={() => setHighlightIndex(shownClients.length)}
+              className={`
+                w-full text-right px-3 py-2 text-sm flex items-center gap-2 border-t border-gray-100 dark:border-gray-800 transition-colors
+                ${highlightIndex === shownClients.length
+                  ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300'
+                  : 'hover:bg-gray-50 dark:hover:bg-gray-800 text-emerald-600 dark:text-emerald-400'
+                }
+              `}
+            >
+              <UserPlus className="size-3.5 shrink-0" />
+              <span>إضافة &quot;{inputValue.trim()}&quot; كزبون جديد</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Hidden indicator: if value has clientId it's an existing client */}
+      {!exactMatch && inputValue.trim() && (
+        <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1">
+          <UserPlus className="size-3" />
+          سيتم إضافة &quot;{inputValue.trim()}&quot; إلى لائحة الزبائن
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ========== Main Component ==========
 export default function ShipmentsManager() {
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -164,7 +350,7 @@ export default function ShipmentsManager() {
       const params = new URLSearchParams();
       if (filterDate) params.set('date', filterDate);
       if (filterStatus && filterStatus !== 'الكل') params.set('status', filterStatus);
-      if (filterVehicleId) params.set('vehicleId', filterVehicleId);
+      if (filterVehicleId && filterVehicleId !== 'all') params.set('vehicleId', filterVehicleId);
 
       const res = await fetch(`/api/shipments?${params.toString()}`);
       if (!res.ok) throw new Error('فشل في تحميل الشحنات');
@@ -226,6 +412,7 @@ export default function ShipmentsManager() {
       orders: shipment.orders.map((o) => ({
         id: o.id,
         clientId: o.client.id,
+        clientName: o.client.name,
         packageCount: o.packageCount,
         description: o.description ?? '',
       })),
@@ -247,10 +434,36 @@ export default function ShipmentsManager() {
     setForm({ ...form, orders: newOrders });
   }
 
-  function updateOrder(index: number, field: keyof OrderItem, value: string | number) {
+  function updateOrderClient(index: number, clientId: string, clientName: string) {
+    const newOrders = [...form.orders];
+    newOrders[index] = { ...newOrders[index], clientId, clientName };
+    setForm({ ...form, orders: newOrders });
+  }
+
+  function updateOrderField(index: number, field: 'packageCount' | 'description', value: string | number) {
     const newOrders = [...form.orders];
     (newOrders[index] as Record<string, unknown>)[field] = value;
     setForm({ ...form, orders: newOrders });
+  }
+
+  // Ensure a client exists (find or create), returns the client ID
+  async function ensureClient(name: string): Promise<string | null> {
+    try {
+      const res = await fetch('/api/clients/ensure', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) return null;
+      const json = await res.json();
+      // Refresh clients list to include any newly created
+      if (json.created) {
+        fetchClients();
+      }
+      return json.data.id;
+    } catch {
+      return null;
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -264,25 +477,47 @@ export default function ShipmentsManager() {
       return;
     }
 
-    // Validate orders
-    const validOrders = form.orders.filter((o) => o.clientId && o.packageCount > 0);
+    // Validate orders - each must have a client name and package count
+    const validOrders = form.orders.filter(
+      (o) => o.clientName.trim() && o.packageCount > 0
+    );
     if (validOrders.length === 0) {
-      toast.error('يجب إضافة طلبية واحدة صالحة على الأقل');
+      toast.error('يجب إضافة طلبية واحدة صالحة على الأقل (اسم الزبون وعدد الطرود)');
       return;
     }
 
     try {
       setSubmitting(true);
+
+      // Step 1: Ensure all clients exist (resolve or create)
+      const resolvedOrders = await Promise.all(
+        validOrders.map(async (o) => {
+          let clientId = o.clientId;
+          // If no clientId, the client might be new - ensure it exists
+          if (!clientId) {
+            clientId = (await ensureClient(o.clientName.trim())) || '';
+          }
+          return {
+            clientId,
+            packageCount: o.packageCount,
+            description: o.description?.trim() || undefined,
+          };
+        })
+      );
+
+      // Validate all clients were resolved
+      const unresolved = resolvedOrders.find((o) => !o.clientId);
+      if (unresolved) {
+        throw new Error('فشل في تسجيل أحد الزبائن');
+      }
+
+      // Step 2: Create/update the shipment
       const body = {
         date: form.date,
         vehicleId: form.vehicleId,
         description: form.description.trim() || undefined,
         status: form.status,
-        orders: validOrders.map((o) => ({
-          clientId: o.clientId,
-          packageCount: o.packageCount,
-          description: o.description?.trim() || undefined,
-        })),
+        orders: resolvedOrders,
       };
 
       if (editingShipment) {
@@ -369,7 +604,7 @@ export default function ShipmentsManager() {
             </div>
             <div className="space-y-2">
               <Label className="text-sm">المركبة</Label>
-              <Select value={filterVehicleId} onValueChange={setFilterVehicleId}>
+              <Select value={filterVehicleId || 'all'} onValueChange={(v) => setFilterVehicleId(v === 'all' ? '' : v)}>
                 <SelectTrigger className="w-full"><SelectValue placeholder="الكل" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">الكل</SelectItem>
@@ -630,41 +865,35 @@ export default function ShipmentsManager() {
                       </Button>
                     )}
                   </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">اسم الزبون <span className="text-red-500">*</span></Label>
+                    <ClientAutocomplete
+                      value={order.clientName}
+                      onChange={(clientId, clientName) =>
+                        updateOrderClient(index, clientId, clientName)
+                      }
+                      clients={clients}
+                    />
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1">
-                      <Label className="text-xs">الزبون</Label>
-                      <Select
-                        value={order.clientId}
-                        onValueChange={(val) => updateOrder(index, 'clientId', val)}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="اختر الزبون" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {clients.map((c) => (
-                            <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">عدد الطرود</Label>
+                      <Label className="text-xs">عدد الطرود <span className="text-red-500">*</span></Label>
                       <Input
                         type="number"
                         min={1}
                         value={order.packageCount || ''}
-                        onChange={(e) => updateOrder(index, 'packageCount', parseInt(e.target.value) || 0)}
+                        onChange={(e) => updateOrderField(index, 'packageCount', parseInt(e.target.value) || 0)}
                         placeholder="عدد الطرود"
                       />
                     </div>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">وصف (اختياري)</Label>
-                    <Input
-                      value={order.description}
-                      onChange={(e) => updateOrder(index, 'description', e.target.value)}
-                      placeholder="وصف الطلبية"
-                    />
+                    <div className="space-y-1">
+                      <Label className="text-xs">وصف (اختياري)</Label>
+                      <Input
+                        value={order.description}
+                        onChange={(e) => updateOrderField(index, 'description', e.target.value)}
+                        placeholder="وصف الطلبية"
+                      />
+                    </div>
                   </div>
                 </div>
               ))}
