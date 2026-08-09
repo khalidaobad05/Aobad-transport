@@ -1,0 +1,802 @@
+     1→'use client';
+     2→
+     3→import { useState, useEffect, useCallback } from 'react';
+     4→import { toast } from 'sonner';
+     5→import { Plus, Pencil, Trash2, Loader2, Printer, Eye } from 'lucide-react';
+     6→import { Button } from '@/components/ui/button';
+     7→import { Input } from '@/components/ui/input';
+     8→import { Label } from '@/components/ui/label';
+     9→import { Textarea } from '@/components/ui/textarea';
+    10→import { Badge } from '@/components/ui/badge';
+    11→import { Skeleton } from '@/components/ui/skeleton';
+    12→import {
+    13→  Select,
+    14→  SelectContent,
+    15→  SelectItem,
+    16→  SelectTrigger,
+    17→  SelectValue,
+    18→} from '@/components/ui/select';
+    19→import {
+    20→  Dialog,
+    21→  DialogContent,
+    22→  DialogHeader,
+    23→  DialogTitle,
+    24→  DialogFooter,
+    25→} from '@/components/ui/dialog';
+    26→import {
+    27→  Table,
+    28→  TableBody,
+    29→  TableCell,
+    30→  TableHead,
+    31→  TableHeader,
+    32→  TableRow,
+    33→} from '@/components/ui/table';
+    34→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+    35→
+    36→interface Client {
+    37→  id: string;
+    38→  name: string;
+    39→  phone: string | null;
+    40→  address: string | null;
+    41→  ifu: string | null;
+    42→  ice: string | null;
+    43→  rc: string | null;
+    44→}
+    45→
+    46→interface Invoice {
+    47→  id: string;
+    48→  number: string;
+    49→  date: string;
+    50→  paymentMethod: string;
+    51→  htAmount: number;
+    52→  tvaRate: number;
+    53→  tvaAmount: number;
+    54→  taxeProfRate: number;
+    55→  taxeProfAmount: number;
+    56→  ttcAmount: number;
+    57→  timbreFiscal: number;
+    58→  status: string;
+    59→  notes: string | null;
+    60→  createdAt: string;
+    61→  client: Client;
+    62→}
+    63→
+    64→interface InvoiceFormData {
+    65→  date: string;
+    66→  clientId: string;
+    67→  paymentMethod: string;
+    68→  htAmount: number;
+    69→  tvaRate: number;
+    70→  taxeProfRate: number;
+    71→  timbreFiscal: number;
+    72→  notes: string;
+    73→  status: string;
+    74→}
+    75→
+    76→const PAYMENT_METHODS = [
+    77→  { value: 'نقدي', label: 'نقدي' },
+    78→  { value: 'شيك', label: 'شيك' },
+    79→  { value: 'تحويل بنكي', label: 'تحويل بنكي' },
+    80→  { value: 'آجل', label: 'آجل' },
+    81→];
+    82→
+    83→const TVA_OPTIONS = [
+    84→  { value: '0', label: '0%' },
+    85→  { value: '7', label: '7%' },
+    86→  { value: '10', label: '10%' },
+    87→  { value: '14', label: '14%' },
+    88→  { value: '20', label: '20%' },
+    89→];
+    90→
+    91→const emptyForm: InvoiceFormData = {
+    92→  date: '',
+    93→  clientId: '',
+    94→  paymentMethod: 'نقدي',
+    95→  htAmount: 0,
+    96→  tvaRate: 20,
+    97→  taxeProfRate: 0,
+    98→  timbreFiscal: 0,
+    99→  notes: '',
+   100→  status: 'غير مدفوعة',
+   101→};
+   102→
+   103→function formatDate(dateStr: string): string {
+   104→  const d = new Date(dateStr);
+   105→  const y = d.getFullYear();
+   106→  const m = String(d.getMonth() + 1).padStart(2, '0');
+   107→  const day = String(d.getDate()).padStart(2, '0');
+   108→  return `${y}/${m}/${day}`;
+   109→}
+   110→
+   111→function formatDateInput(dateStr: string): string {
+   112→  const d = new Date(dateStr);
+   113→  const y = d.getFullYear();
+   114→  const m = String(d.getMonth() + 1).padStart(2, '0');
+   115→  const day = String(d.getDate()).padStart(2, '0');
+   116→  return `${y}-${m}-${day}`;
+   117→}
+   118→
+   119→function formatCurrency(amount: number): string {
+   120→  return amount.toLocaleString('ar-MA') + ' د.م.';
+   121→}
+   122→
+   123→function getStatusBadge(status: string) {
+   124→  switch (status) {
+   125→    case 'مدفوعة':
+   126→      return (
+   127→        <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-0">
+   128→          مدفوعة
+   129→        </Badge>
+   130→      );
+   131→    case 'غير مدفوعة':
+   132→      return (
+   133→        <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-0">
+   134→          غير مدفوعة
+   135→        </Badge>
+   136→      );
+   137→    case 'ملغاة':
+   138→      return (
+   139→        <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-0">
+   140→          ملغاة
+   141→        </Badge>
+   142→      );
+   143→    default:
+   144→      return <Badge variant="secondary">{status}</Badge>;
+   145→  }
+   146→}
+   147→
+   148→function computeTaxValues(htAmount: number, tvaRate: number, taxeProfRate: number, timbreFiscal: number) {
+   149→  const tvaAmount = htAmount * (tvaRate / 100);
+   150→  const taxeProfAmount = htAmount * (taxeProfRate / 100);
+   151→  const ttcAmount = htAmount + tvaAmount + taxeProfAmount + timbreFiscal;
+   152→  return { tvaAmount, taxeProfAmount, ttcAmount };
+   153→}
+   154→
+   155→export default function InvoicesManager() {
+   156→  const [invoices, setInvoices] = useState<Invoice[]>([]);
+   157→  const [loading, setLoading] = useState(true);
+   158→  const [dialogOpen, setDialogOpen] = useState(false);
+   159→  const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
+   160→  const [form, setForm] = useState<InvoiceFormData>(emptyForm);
+   161→  const [submitting, setSubmitting] = useState(false);
+   162→  const [deletingId, setDeletingId] = useState<string | null>(null);
+   163→
+   164→  // Reference data
+   165→  const [clients, setClients] = useState<Client[]>([]);
+   166→
+   167→  // Print view
+   168→  const [printInvoice, setPrintInvoice] = useState<Invoice | null>(null);
+   169→
+   170→  const fetchInvoices = useCallback(async () => {
+   171→    try {
+   172→      setLoading(true);
+   173→      const res = await fetch('/api/invoices');
+   174→      if (!res.ok) throw new Error('فشل في تحميل الفواتير');
+   175→      const json = await res.json();
+   176→      setInvoices(Array.isArray(json) ? json : json.data ?? []);
+   177→    } catch (err) {
+   178→      toast.error(
+   179→        err instanceof Error ? err.message : 'حدث خطأ أثناء تحميل الفواتير'
+   180→      );
+   181→    } finally {
+   182→      setLoading(false);
+   183→    }
+   184→  }, []);
+   185→
+   186→  const fetchClients = useCallback(async () => {
+   187→    try {
+   188→      const res = await fetch('/api/clients');
+   189→      if (!res.ok) return;
+   190→      const json = await res.json();
+   191→      setClients(Array.isArray(json) ? json : json.data ?? []);
+   192→    } catch {
+   193→      // silently fail
+   194→    }
+   195→  }, []);
+   196→
+   197→  useEffect(() => {
+   198→    fetchInvoices();
+   199→  }, [fetchInvoices]);
+   200→
+   201→  useEffect(() => {
+   202→    fetchClients();
+   203→  }, [fetchClients]);
+   204→
+   205→  function openCreateDialog() {
+   206→    setEditingInvoice(null);
+   207→    setForm(emptyForm);
+   208→    setDialogOpen(true);
+   209→  }
+   210→
+   211→  function openEditDialog(invoice: Invoice) {
+   212→    setEditingInvoice(invoice);
+   213→    setForm({
+   214→      date: formatDateInput(invoice.date),
+   215→      clientId: invoice.client.id,
+   216→      paymentMethod: invoice.paymentMethod,
+   217→      htAmount: invoice.htAmount,
+   218→      tvaRate: invoice.tvaRate,
+   219→      taxeProfRate: invoice.taxeProfRate,
+   220→      timbreFiscal: invoice.timbreFiscal,
+   221→      notes: invoice.notes ?? '',
+   222→      status: invoice.status,
+   223→    });
+   224→    setDialogOpen(true);
+   225→  }
+   226→
+   227→  async function handleSubmit(e: React.FormEvent) {
+   228→    e.preventDefault();
+   229→    if (!form.date) {
+   230→      toast.error('التاريخ مطلوب');
+   231→      return;
+   232→    }
+   233→    if (!form.clientId) {
+   234→      toast.error('الزبون مطلوب');
+   235→      return;
+   236→    }
+   237→    if (form.htAmount <= 0) {
+   238→      toast.error('المبلغ HT مطلوب');
+   239→      return;
+   240→    }
+   241→
+   242→    try {
+   243→      setSubmitting(true);
+   244→      const { tvaAmount, taxeProfAmount, ttcAmount } = computeTaxValues(
+   245→        form.htAmount,
+   246→        form.tvaRate,
+   247→        form.taxeProfRate,
+   248→        form.timbreFiscal
+   249→      );
+   250→      const body = {
+   251→        date: form.date,
+   252→        clientId: form.clientId,
+   253→        paymentMethod: form.paymentMethod,
+   254→        htAmount: form.htAmount,
+   255→        tvaRate: form.tvaRate,
+   256→        tvaAmount,
+   257→        taxeProfRate: form.taxeProfRate,
+   258→        taxeProfAmount,
+   259→        ttcAmount,
+   260→        timbreFiscal: form.timbreFiscal,
+   261→        notes: form.notes.trim() || undefined,
+   262→        status: form.status,
+   263→      };
+   264→
+   265→      if (editingInvoice) {
+   266→        const res = await fetch(`/api/invoices/${editingInvoice.id}`, {
+   267→          method: 'PUT',
+   268→          headers: { 'Content-Type': 'application/json' },
+   269→          body: JSON.stringify(body),
+   270→        });
+   271→        if (!res.ok) throw new Error('فشل في تحديث الفاتورة');
+   272→        toast.success('تم تحديث الفاتورة بنجاح');
+   273→      } else {
+   274→        const res = await fetch('/api/invoices', {
+   275→          method: 'POST',
+   276→          headers: { 'Content-Type': 'application/json' },
+   277→          body: JSON.stringify(body),
+   278→        });
+   279→        if (!res.ok) throw new Error('فشل في إنشاء الفاتورة');
+   280→        toast.success('تم إنشاء الفاتورة بنجاح');
+   281→      }
+   282→
+   283→      setDialogOpen(false);
+   284→      fetchInvoices();
+   285→    } catch (err) {
+   286→      toast.error(err instanceof Error ? err.message : 'حدث خطأ غير متوقع');
+   287→    } finally {
+   288→      setSubmitting(false);
+   289→    }
+   290→  }
+   291→
+   292→  async function handleDelete(id: string) {
+   293→    try {
+   294→      setDeletingId(id);
+   295→      const res = await fetch(`/api/invoices/${id}`, { method: 'DELETE' });
+   296→      if (!res.ok) throw new Error('فشل في حذف الفاتورة');
+   297→      toast.success('تم حذف الفاتورة بنجاح');
+   298→      fetchInvoices();
+   299→    } catch (err) {
+   300→      toast.error(err instanceof Error ? err.message : 'حدث خطأ أثناء الحذف');
+   301→    } finally {
+   302→      setDeletingId(null);
+   303→    }
+   304→  }
+   305→
+   306→  // Live calculation values
+   307→  const liveCalc = computeTaxValues(form.htAmount, form.tvaRate, form.taxeProfRate, form.timbreFiscal);
+   308→
+   309→  const selectedClient = clients.find((c) => c.id === form.clientId);
+   310→
+   311→  return (
+   312→    <div className="space-y-6">
+   313→      {/* Print CSS */}
+   314→      <style jsx global>{`
+   315→        @media print {
+   316→          .no-print {
+   317→            display: none !important;
+   318→          }
+   319→          #invoice-print {
+   320→            display: block !important;
+   321→            position: static !important;
+   322→            width: 100% !important;
+   323→            margin: 0 !important;
+   324→            padding: 2rem !important;
+   325→          }
+   326→          body {
+   327→            background: white !important;
+   328→            color: black !important;
+   329→          }
+   330→          * {
+   331→            box-shadow: none !important;
+   332→          }
+   333→        }
+   334→      `}</style>
+   335→
+   336→      {/* Header with Add Button */}
+   337→      <div className="flex items-center justify-between no-print">
+   338→        <Button
+   339→          onClick={openCreateDialog}
+   340→          className="bg-amber-500 hover:bg-amber-600 text-white"
+   341→        >
+   342→          <Plus className="size-4" />
+   343→          إنشاء فاتورة
+   344→        </Button>
+   345→      </div>
+   346→
+   347→      {/* Invoices Table */}
+   348→      <Card className="bg-white dark:bg-gray-900 border shadow-sm no-print">
+   349→        <CardHeader className="p-4 pb-0">
+   350→          <CardTitle className="text-lg">الفواتير</CardTitle>
+   351→        </CardHeader>
+   352→        <CardContent className="p-0">
+   353→          {loading ? (
+   354→            <div className="p-6 space-y-3">
+   355→              {Array.from({ length: 5 }).map((_, i) => (
+   356→                <Skeleton key={i} className="h-10 w-full" />
+   357→              ))}
+   358→            </div>
+   359→          ) : invoices.length > 0 ? (
+   360→            <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+   361→              <Table>
+   362→                <TableHeader>
+   363→                  <TableRow>
+   364→                    <TableHead>رقم الفاتورة</TableHead>
+   365→                    <TableHead>التاريخ</TableHead>
+   366→                    <TableHead>الزبون</TableHead>
+   367→                    <TableHead>مبلغ HT</TableHead>
+   368→                    <TableHead>TVA</TableHead>
+   369→                    <TableHead>مبلغ TTC</TableHead>
+   370→                    <TableHead>الحالة</TableHead>
+   371→                    <TableHead>الإجراءات</TableHead>
+   372→                  </TableRow>
+   373→                </TableHeader>
+   374→                <TableBody>
+   375→                  {invoices.map((invoice) => (
+   376→                    <TableRow key={invoice.id}>
+   377→                      <TableCell className="font-medium">
+   378→                        {invoice.number}
+   379→                      </TableCell>
+   380→                      <TableCell>{formatDate(invoice.date)}</TableCell>
+   381→                      <TableCell>{invoice.client.name}</TableCell>
+   382→                      <TableCell>{formatCurrency(invoice.htAmount)}</TableCell>
+   383→                      <TableCell>{invoice.tvaRate}%</TableCell>
+   384→                      <TableCell className="font-semibold">
+   385→                        {formatCurrency(invoice.ttcAmount)}
+   386→                      </TableCell>
+   387→                      <TableCell>{getStatusBadge(invoice.status)}</TableCell>
+   388→                      <TableCell>
+   389→                        <div className="flex items-center gap-1">
+   390→                          <Button
+   391→                            variant="ghost"
+   392→                            size="icon"
+   393→                            onClick={() => setPrintInvoice(invoice)}
+   394→                            className="text-teal-600 hover:text-teal-700 hover:bg-teal-50 dark:hover:bg-teal-900/20"
+   395→                            title="عرض/طباعة"
+   396→                          >
+   397→                            <Eye className="size-4" />
+   398→                          </Button>
+   399→                          <Button
+   400→                            variant="ghost"
+   401→                            size="icon"
+   402→                            onClick={() => openEditDialog(invoice)}
+   403→                            className="text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+   404→                            title="تعديل"
+   405→                          >
+   406→                            <Pencil className="size-4" />
+   407→                          </Button>
+   408→                          <Button
+   409→                            variant="ghost"
+   410→                            size="icon"
+   411→                            onClick={() => handleDelete(invoice.id)}
+   412→                            disabled={deletingId === invoice.id}
+   413→                            className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+   414→                            title="حذف"
+   415→                          >
+   416→                            {deletingId === invoice.id ? (
+   417→                              <Loader2 className="size-4 animate-spin" />
+   418→                            ) : (
+   419→                              <Trash2 className="size-4" />
+   420→                            )}
+   421→                          </Button>
+   422→                        </div>
+   423→                      </TableCell>
+   424→                    </TableRow>
+   425→                  ))}
+   426→                </TableBody>
+   427→              </Table>
+   428→            </div>
+   429→          ) : (
+   430→            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+   431→              <p className="text-base">لا توجد فواتير</p>
+   432→              <p className="text-sm mt-1">
+   433→                اضغط على &quot;إنشاء فاتورة&quot; لإنشاء فاتورة جديدة
+   434→              </p>
+   435→            </div>
+   436→          )}
+   437→        </CardContent>
+   438→      </Card>
+   439→
+   440→      {/* Create / Edit Dialog */}
+   441→      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+   442→        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+   443→          <DialogHeader>
+   444→            <DialogTitle>
+   445→              {editingInvoice ? 'تعديل الفاتورة' : 'إنشاء فاتورة جديدة'}
+   446→            </DialogTitle>
+   447→          </DialogHeader>
+   448→          <form onSubmit={handleSubmit} className="space-y-4">
+   449→            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   450→              <div className="space-y-2">
+   451→                <Label htmlFor="inv-date">
+   452→                  التاريخ <span className="text-red-500">*</span>
+   453→                </Label>
+   454→                <Input
+   455→                  id="inv-date"
+   456→                  type="date"
+   457→                  value={form.date}
+   458→                  onChange={(e) => setForm({ ...form, date: e.target.value })}
+   459→                  required
+   460→                />
+   461→              </div>
+   462→              <div className="space-y-2">
+   463→                <Label>
+   464→                  الزبون <span className="text-red-500">*</span>
+   465→                </Label>
+   466→                <Select
+   467→                  value={form.clientId}
+   468→                  onValueChange={(val) => setForm({ ...form, clientId: val })}
+   469→                >
+   470→                  <SelectTrigger className="w-full">
+   471→                    <SelectValue placeholder="اختر الزبون" />
+   472→                  </SelectTrigger>
+   473→                  <SelectContent>
+   474→                    {clients.map((c) => (
+   475→                      <SelectItem key={c.id} value={c.id}>
+   476→                        {c.name}
+   477→                      </SelectItem>
+   478→                    ))}
+   479→                  </SelectContent>
+   480→                </Select>
+   481→              </div>
+   482→            </div>
+   483→
+   484→            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   485→              <div className="space-y-2">
+   486→                <Label>طريقة الدفع</Label>
+   487→                <Select
+   488→                  value={form.paymentMethod}
+   489→                  onValueChange={(val) => setForm({ ...form, paymentMethod: val })}
+   490→                >
+   491→                  <SelectTrigger className="w-full">
+   492→                    <SelectValue />
+   493→                  </SelectTrigger>
+   494→                  <SelectContent>
+   495→                    {PAYMENT_METHODS.map((m) => (
+   496→                      <SelectItem key={m.value} value={m.value}>
+   497→                        {m.label}
+   498→                      </SelectItem>
+   499→                    ))}
+   500→                  </SelectContent>
+   501→                </Select>
+   502→              </div>
+   503→              <div className="space-y-2">
+   504→                <Label>نسبة TVA</Label>
+   505→                <Select
+   506→                  value={String(form.tvaRate)}
+   507→                  onValueChange={(val) => setForm({ ...form, tvaRate: parseFloat(val) })}
+   508→                >
+   509→                  <SelectTrigger className="w-full">
+   510→                    <SelectValue />
+   511→                  </SelectTrigger>
+   512→                  <SelectContent>
+   513→                    {TVA_OPTIONS.map((t) => (
+   514→                      <SelectItem key={t.value} value={t.value}>
+   515→                        {t.label}
+   516→                      </SelectItem>
+   517→                    ))}
+   518→                  </SelectContent>
+   519→                </Select>
+   520→              </div>
+   521→            </div>
+   522→
+   523→            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   524→              <div className="space-y-2">
+   525→                <Label htmlFor="inv-ht">المبلغ HT <span className="text-red-500">*</span></Label>
+   526→                <Input
+   527→                  id="inv-ht"
+   528→                  type="number"
+   529→                  min={0}
+   530→                  step={0.01}
+   531→                  value={form.htAmount || ''}
+   532→                  onChange={(e) =>
+   533→                    setForm({ ...form, htAmount: parseFloat(e.target.value) || 0 })
+   534→                  }
+   535→                  required
+   536→                />
+   537→              </div>
+   538→              <div className="space-y-2">
+   539→                <Label htmlFor="inv-taxe-prof">نسبة الضريبة المهنية (%)</Label>
+   540→                <Input
+   541→                  id="inv-taxe-prof"
+   542→                  type="number"
+   543→                  min={0}
+   544→                  step={0.01}
+   545→                  value={form.taxeProfRate || ''}
+   546→                  onChange={(e) =>
+   547→                    setForm({ ...form, taxeProfRate: parseFloat(e.target.value) || 0 })
+   548→                  }
+   549→                />
+   550→              </div>
+   551→            </div>
+   552→
+   553→            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   554→              <div className="space-y-2">
+   555→                <Label htmlFor="inv-timbre">Timbre Fiscal</Label>
+   556→                <Input
+   557→                  id="inv-timbre"
+   558→                  type="number"
+   559→                  min={0}
+   560→                  step={0.01}
+   561→                  value={form.timbreFiscal || ''}
+   562→                  onChange={(e) =>
+   563→                    setForm({ ...form, timbreFiscal: parseFloat(e.target.value) || 0 })
+   564→                  }
+   565→                />
+   566→              </div>
+   567→              <div className="space-y-2">
+   568→                <Label>الحالة</Label>
+   569→                <Select
+   570→                  value={form.status}
+   571→                  onValueChange={(val) => setForm({ ...form, status: val })}
+   572→                >
+   573→                  <SelectTrigger className="w-full">
+   574→                    <SelectValue />
+   575→                  </SelectTrigger>
+   576→                  <SelectContent>
+   577→                    <SelectItem value="غير مدفوعة">غير مدفوعة</SelectItem>
+   578→                    <SelectItem value="مدفوعة">مدفوعة</SelectItem>
+   579→                    <SelectItem value="ملغاة">ملغاة</SelectItem>
+   580→                  </SelectContent>
+   581→                </Select>
+   582→              </div>
+   583→            </div>
+   584→
+   585→            <div className="space-y-2">
+   586→              <Label htmlFor="inv-notes">ملاحظات</Label>
+   587→              <Textarea
+   588→                id="inv-notes"
+   589→                value={form.notes}
+   590→                onChange={(e) => setForm({ ...form, notes: e.target.value })}
+   591→                placeholder="أدخل ملاحظات (اختياري)"
+   592→                rows={3}
+   593→              />
+   594→            </div>
+   595→
+   596→            {/* Live Calculation Preview */}
+   597→            <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-lg p-4 space-y-2">
+   598→              <h4 className="font-semibold text-amber-800 dark:text-amber-300 text-sm mb-3">
+   599→                معاينة الحساب
+   600→              </h4>
+   601→              <div className="grid grid-cols-2 gap-2 text-sm">
+   602→                <span className="text-gray-600 dark:text-gray-400">المبلغ HT:</span>
+   603→                <span className="font-medium text-gray-900 dark:text-gray-100 text-left">
+   604→                  {formatCurrency(form.htAmount)}
+   605→                </span>
+   606→                <span className="text-gray-600 dark:text-gray-400">مبلغ TVA ({form.tvaRate}%):</span>
+   607→                <span className="font-medium text-gray-900 dark:text-gray-100 text-left">
+   608→                  {formatCurrency(liveCalc.tvaAmount)}
+   609→                </span>
+   610→                <span className="text-gray-600 dark:text-gray-400">الضريبة المهنية ({form.taxeProfRate}%):</span>
+   611→                <span className="font-medium text-gray-900 dark:text-gray-100 text-left">
+   612→                  {formatCurrency(liveCalc.taxeProfAmount)}
+   613→                </span>
+   614→                <span className="text-gray-600 dark:text-gray-400">Timbre Fiscal:</span>
+   615→                <span className="font-medium text-gray-900 dark:text-gray-100 text-left">
+   616→                  {formatCurrency(form.timbreFiscal)}
+   617→                </span>
+   618→                <span className="text-gray-600 dark:text-gray-400 font-bold border-t border-amber-300 dark:border-amber-700 pt-2">
+   619→                  المبلغ TTC:
+   620→                </span>
+   621→                <span className="font-bold text-lg text-amber-700 dark:text-amber-300 text-left border-t border-amber-300 dark:border-amber-700 pt-2">
+   622→                  {formatCurrency(liveCalc.ttcAmount)}
+   623→                </span>
+   624→              </div>
+   625→            </div>
+   626→
+   627→            <DialogFooter>
+   628→              <Button
+   629→                type="button"
+   630→                variant="outline"
+   631→                onClick={() => setDialogOpen(false)}
+   632→                disabled={submitting}
+   633→              >
+   634→                إلغاء
+   635→              </Button>
+   636→              <Button
+   637→                type="submit"
+   638→                disabled={submitting}
+   639→                className="bg-amber-500 hover:bg-amber-600 text-white"
+   640→              >
+   641→                {submitting && <Loader2 className="size-4 animate-spin ml-2" />}
+   642→                {editingInvoice ? 'تحديث' : 'إنشاء'}
+   643→              </Button>
+   644→            </DialogFooter>
+   645→          </form>
+   646→        </DialogContent>
+   647→      </Dialog>
+   648→
+   649→      {/* Invoice Print View */}
+   650→      <Dialog open={!!printInvoice} onOpenChange={(open) => !open && setPrintInvoice(null)}>
+   651→        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto" id="invoice-print">
+   652→          <div className="no-print flex justify-end mb-2">
+   653→            <Button
+   654→              variant="outline"
+   655→              onClick={() => window.print()}
+   656→              className="border-amber-500 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+   657→            >
+   658→              <Printer className="size-4 ml-2" />
+   659→              طباعة
+   660→            </Button>
+   661→          </div>
+   662→          {printInvoice && (
+   663→            <div className="border-2 border-gray-300 p-8 bg-white dark:bg-gray-900">
+   664→              {/* Company Header */}
+   665→              <div className="text-center mb-6">
+   666→                <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+   667→                  شركة عباد للنقل
+   668→                </h1>
+   669→                <p className="text-lg font-semibold text-gray-700 dark:text-gray-300 mt-2">
+   670→                  فاتورة رسمية (Facture)
+   671→                </p>
+   672→              </div>
+   673→
+   674→              {/* Info Rows */}
+   675→              <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm mb-6 border-b border-gray-300 pb-4">
+   676→                <div className="flex gap-2">
+   677→                  <span className="font-semibold text-gray-700 dark:text-gray-300">رقم الفاتورة:</span>
+   678→                  <span className="text-gray-900 dark:text-gray-100">{printInvoice.number}</span>
+   679→                </div>
+   680→                <div className="flex gap-2">
+   681→                  <span className="font-semibold text-gray-700 dark:text-gray-300">التاريخ:</span>
+   682→                  <span className="text-gray-900 dark:text-gray-100">{formatDate(printInvoice.date)}</span>
+   683→                </div>
+   684→                <div className="flex gap-2">
+   685→                  <span className="font-semibold text-gray-700 dark:text-gray-300">الزبون:</span>
+   686→                  <span className="text-gray-900 dark:text-gray-100">{printInvoice.client.name}</span>
+   687→                </div>
+   688→                <div className="flex gap-2">
+   689→                  <span className="font-semibold text-gray-700 dark:text-gray-300">طريقة الدفع:</span>
+   690→                  <span className="text-gray-900 dark:text-gray-100">{printInvoice.paymentMethod}</span>
+   691→                </div>
+   692→                <div className="flex gap-2">
+   693→                  <span className="font-semibold text-gray-700 dark:text-gray-300">العنوان:</span>
+   694→                  <span className="text-gray-900 dark:text-gray-100">{printInvoice.client.address || '—'}</span>
+   695→                </div>
+   696→                <div className="flex gap-2">
+   697→                  <span className="font-semibold text-gray-700 dark:text-gray-300">الهاتف:</span>
+   698→                  <span className="text-gray-900 dark:text-gray-100">{printInvoice.client.phone || '—'}</span>
+   699→                </div>
+   700→                <div className="flex gap-2">
+   701→                  <span className="font-semibold text-gray-700 dark:text-gray-300">IFU:</span>
+   702→                  <span className="text-gray-900 dark:text-gray-100">{printInvoice.client.ifu || '—'}</span>
+   703→                </div>
+   704→                <div className="flex gap-2">
+   705→                  <span className="font-semibold text-gray-700 dark:text-gray-300">ICE:</span>
+   706→                  <span className="text-gray-900 dark:text-gray-100">{printInvoice.client.ice || '—'}</span>
+   707→                </div>
+   708→                <div className="flex gap-2">
+   709→                  <span className="font-semibold text-gray-700 dark:text-gray-300">RC:</span>
+   710→                  <span className="text-gray-900 dark:text-gray-100">{printInvoice.client.rc || '—'}</span>
+   711→                </div>
+   712→              </div>
+   713→
+   714→              {/* Invoice Table */}
+   715→              <div className="overflow-x-auto mb-6">
+   716→                <table className="w-full text-sm border-collapse">
+   717→                  <thead>
+   718→                    <tr className="bg-amber-50 dark:bg-amber-900/20">
+   719→                      <th className="border border-gray-300 px-3 py-2 font-semibold text-gray-700 dark:text-gray-300">م</th>
+   720→                      <th className="border border-gray-300 px-3 py-2 font-semibold text-gray-700 dark:text-gray-300">الوصف</th>
+   721→                      <th className="border border-gray-300 px-3 py-2 font-semibold text-gray-700 dark:text-gray-300 text-center">الكمية</th>
+   722→                      <th className="border border-gray-300 px-3 py-2 font-semibold text-gray-700 dark:text-gray-300 text-center">سعر الوحدة</th>
+   723→                      <th className="border border-gray-300 px-3 py-2 font-semibold text-gray-700 dark:text-gray-300 text-center">المبلغ HT</th>
+   724→                    </tr>
+   725→                  </thead>
+   726→                  <tbody>
+   727→                    <tr className="even:bg-gray-50 dark:even:bg-gray-800/50">
+   728→                      <td className="border border-gray-300 px-3 py-2 text-center">1</td>
+   729→                      <td className="border border-gray-300 px-3 py-2">خدمات النقل</td>
+   730→                      <td className="border border-gray-300 px-3 py-2 text-center">1</td>
+   731→                      <td className="border border-gray-300 px-3 py-2 text-center">{formatCurrency(printInvoice.htAmount)}</td>
+   732→                      <td className="border border-gray-300 px-3 py-2 text-center">{formatCurrency(printInvoice.htAmount)}</td>
+   733→                    </tr>
+   734→                  </tbody>
+   735→                  <tfoot>
+   736→                    <tr>
+   737→                      <td colSpan={4} className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">
+   738→                        المبلغ HT:
+   739→                      </td>
+   740→                      <td className="border border-gray-300 px-3 py-2 text-center font-semibold">{formatCurrency(printInvoice.htAmount)}</td>
+   741→                    </tr>
+   742→                    <tr>
+   743→                      <td colSpan={4} className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">
+   744→                        TVA ({printInvoice.tvaRate}%):
+   745→                      </td>
+   746→                      <td className="border border-gray-300 px-3 py-2 text-center">{formatCurrency(printInvoice.tvaAmount)}</td>
+   747→                    </tr>
+   748→                    {printInvoice.taxeProfRate > 0 && (
+   749→                      <tr>
+   750→                        <td colSpan={4} className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">
+   751→                          الضريبة المهنية ({printInvoice.taxeProfRate}%):
+   752→                        </td>
+   753→                        <td className="border border-gray-300 px-3 py-2 text-center">{formatCurrency(printInvoice.taxeProfAmount)}</td>
+   754→                      </tr>
+   755→                    )}
+   756→                    {printInvoice.timbreFiscal > 0 && (
+   757→                      <tr>
+   758→                        <td colSpan={4} className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">
+   759→                          Timbre Fiscal:
+   760→                        </td>
+   761→                        <td className="border border-gray-300 px-3 py-2 text-center">{formatCurrency(printInvoice.timbreFiscal)}</td>
+   762→                      </tr>
+   763→                    )}
+   764→                    <tr className="bg-amber-50 dark:bg-amber-900/20 font-bold">
+   765→                      <td colSpan={4} className="border border-gray-300 px-3 py-3 text-left text-lg text-gray-900 dark:text-gray-100">
+   766→                        المبلغ TTC:
+   767→                      </td>
+   768→                      <td className="border border-gray-300 px-3 py-3 text-center text-xl text-amber-700 dark:text-amber-300">
+   769→                        {formatCurrency(printInvoice.ttcAmount)}
+   770→                      </td>
+   771→                    </tr>
+   772→                  </tfoot>
+   773→                </table>
+   774→              </div>
+   775→
+   776→              {/* Notes */}
+   777→              {printInvoice.notes && (
+   778→                <div className="text-sm mb-6">
+   779→                  <span className="font-semibold text-gray-700 dark:text-gray-300">ملاحظات:</span>{' '}
+   780→                  <span className="text-gray-900 dark:text-gray-100">{printInvoice.notes}</span>
+   781→                </div>
+   782→              )}
+   783→
+   784→              {/* Signature Lines */}
+   785→              <div className="grid grid-cols-2 gap-8 mt-12 pt-4">
+   786→                <div className="text-center">
+   787→                  <p className="font-semibold text-gray-700 dark:text-gray-300 mb-2">توقيع الزبون</p>
+   788→                  <div className="border-b border-gray-400 dark:border-gray-600 pb-1">&nbsp;</div>
+   789→                </div>
+   790→                <div className="text-center">
+   791→                  <p className="font-semibold text-gray-700 dark:text-gray-300 mb-2">توقيع شركة عباد للنقل</p>
+   792→                  <div className="border-b border-gray-400 dark:border-gray-600 pb-1">&nbsp;</div>
+   793→                </div>
+   794→              </div>
+   795→            </div>
+   796→          )}
+   797→        </DialogContent>
+   798→      </Dialog>
+   799→    </div>
+   800→  );
+   801→}
+   802→

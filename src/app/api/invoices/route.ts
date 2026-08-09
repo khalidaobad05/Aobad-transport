@@ -24,8 +24,7 @@ export async function POST(request: NextRequest) {
     const {
       date,
       paymentMethod,
-      shipmentIds,
-      htAmount: bodyHtAmount,
+      htAmount,
       tvaRate,
       tvaAmount: bodyTvaAmount,
       taxeProfRate,
@@ -34,6 +33,7 @@ export async function POST(request: NextRequest) {
       timbreFiscal,
       status,
       notes,
+      companyInfo,
       clientId,
     } = body
 
@@ -44,15 +44,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Use manual htAmount value (pricing is handled manually)
-
     const tvRate = tvaRate || 20
     const tpRate = taxeProfRate || 0
     const tf = timbreFiscal || 0
 
-    const tvaAmount = htAmount * (tvRate / 100)
-    const taxeProfAmount = htAmount * (tpRate / 100)
-    const ttcAmount = htAmount + tvaAmount + taxeProfAmount + tf
+    const tvaAmount = bodyTvaAmount ?? htAmount * (tvRate / 100)
+    const taxeProfAmount = bodyTaxeProfAmount ?? htAmount * (tpRate / 100)
+    const ttcAmount = bodyTtcAmount ?? (htAmount + tvaAmount + taxeProfAmount + tf)
 
     // Generate next number
     const lastInvoice = await db.invoice.findFirst({
@@ -77,6 +75,7 @@ export async function POST(request: NextRequest) {
         timbreFiscal: tf,
         status: status || 'غير مدفوعة',
         notes: notes || null,
+        companyInfo: companyInfo || null,
         clientId,
       },
       include: { client: true },

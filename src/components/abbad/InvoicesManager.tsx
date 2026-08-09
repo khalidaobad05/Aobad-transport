@@ -43,6 +43,15 @@ interface Client {
   rc: string | null;
 }
 
+interface CompanyInfo {
+  name: string;
+  address: string;
+  phone: string;
+  ice: string;
+  ifu: string;
+  rc: string;
+}
+
 interface Invoice {
   id: string;
   number: string;
@@ -57,6 +66,7 @@ interface Invoice {
   timbreFiscal: number;
   status: string;
   notes: string | null;
+  companyInfo: string | null;
   createdAt: string;
   client: Client;
 }
@@ -71,6 +81,13 @@ interface InvoiceFormData {
   timbreFiscal: number;
   notes: string;
   status: string;
+  // Company info fields (all optional)
+  companyName: string;
+  companyAddress: string;
+  companyPhone: string;
+  companyICE: string;
+  companyIFU: string;
+  companyRC: string;
 }
 
 const PAYMENT_METHODS = [
@@ -88,6 +105,25 @@ const TVA_OPTIONS = [
   { value: '20', label: '20%' },
 ];
 
+const STORAGE_KEY = 'abbad-company-info';
+
+function loadSavedCompanyInfo(): CompanyInfo {
+  if (typeof window === 'undefined') return { name: 'شركة عباد للنقل', address: '', phone: '', ice: '', ifu: '', rc: '' };
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch { /* ignore */ }
+  return { name: 'شركة عباد للنقل', address: '', phone: '', ice: '', ifu: '', rc: '' };
+}
+
+function saveCompanyInfo(info: CompanyInfo) {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(info));
+  }
+}
+
+const defaultCompany = loadSavedCompanyInfo();
+
 const emptyForm: InvoiceFormData = {
   date: '',
   clientId: '',
@@ -98,6 +134,12 @@ const emptyForm: InvoiceFormData = {
   timbreFiscal: 0,
   notes: '',
   status: 'غير مدفوعة',
+  companyName: defaultCompany.name,
+  companyAddress: defaultCompany.address,
+  companyPhone: defaultCompany.phone,
+  companyICE: defaultCompany.ice,
+  companyIFU: defaultCompany.ifu,
+  companyRC: defaultCompany.rc,
 };
 
 function formatDate(dateStr: string): string {
@@ -152,6 +194,15 @@ function computeTaxValues(htAmount: number, tvaRate: number, taxeProfRate: numbe
   return { tvaAmount, taxeProfAmount, ttcAmount };
 }
 
+function parseCompanyInfo(raw: string | null): CompanyInfo {
+  if (!raw) return loadSavedCompanyInfo();
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return loadSavedCompanyInfo();
+  }
+}
+
 export default function InvoicesManager() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -160,6 +211,7 @@ export default function InvoicesManager() {
   const [form, setForm] = useState<InvoiceFormData>(emptyForm);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [companySectionOpen, setCompanySectionOpen] = useState(false);
 
   // Reference data
   const [clients, setClients] = useState<Client[]>([]);
@@ -203,12 +255,23 @@ export default function InvoicesManager() {
   }, [fetchClients]);
 
   function openCreateDialog() {
+    const saved = loadSavedCompanyInfo();
     setEditingInvoice(null);
-    setForm(emptyForm);
+    setForm({
+      ...emptyForm,
+      companyName: saved.name,
+      companyAddress: saved.address,
+      companyPhone: saved.phone,
+      companyICE: saved.ice,
+      companyIFU: saved.ifu,
+      companyRC: saved.rc,
+    });
+    setCompanySectionOpen(false);
     setDialogOpen(true);
   }
 
   function openEditDialog(invoice: Invoice) {
+    const info = parseCompanyInfo(invoice.companyInfo);
     setEditingInvoice(invoice);
     setForm({
       date: formatDateInput(invoice.date),
@@ -220,7 +283,14 @@ export default function InvoicesManager() {
       timbreFiscal: invoice.timbreFiscal,
       notes: invoice.notes ?? '',
       status: invoice.status,
+      companyName: info.name,
+      companyAddress: info.address,
+      companyPhone: info.phone,
+      companyICE: info.ice,
+      companyIFU: info.ifu,
+      companyRC: info.rc,
     });
+    setCompanySectionOpen(true);
     setDialogOpen(true);
   }
 
@@ -241,6 +311,18 @@ export default function InvoicesManager() {
 
     try {
       setSubmitting(true);
+
+      // Save company info for next time
+      const companyInfo: CompanyInfo = {
+        name: form.companyName.trim() || 'شركة عباد للنقل',
+        address: form.companyAddress.trim(),
+        phone: form.companyPhone.trim(),
+        ice: form.companyICE.trim(),
+        ifu: form.companyIFU.trim(),
+        rc: form.companyRC.trim(),
+      };
+      saveCompanyInfo(companyInfo);
+
       const { tvaAmount, taxeProfAmount, ttcAmount } = computeTaxValues(
         form.htAmount,
         form.tvaRate,
@@ -260,6 +342,7 @@ export default function InvoicesManager() {
         timbreFiscal: form.timbreFiscal,
         notes: form.notes.trim() || undefined,
         status: form.status,
+        companyInfo: JSON.stringify(companyInfo),
       };
 
       if (editingInvoice) {
@@ -310,29 +393,6 @@ export default function InvoicesManager() {
 
   return (
     <div className="space-y-6">
-      {/* Print CSS */}
-      <style jsx global>{`
-        @media print {
-          .no-print {
-            display: none !important;
-          }
-          #invoice-print {
-            display: block !important;
-            position: static !important;
-            width: 100% !important;
-            margin: 0 !important;
-            padding: 2rem !important;
-          }
-          body {
-            background: white !important;
-            color: black !important;
-          }
-          * {
-            box-shadow: none !important;
-          }
-        }
-      `}</style>
-
       {/* Header with Add Button */}
       <div className="flex items-center justify-between no-print">
         <Button
@@ -446,6 +506,82 @@ export default function InvoicesManager() {
             </DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Company Info Section (collapsible) */}
+            <div className="border rounded-lg overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setCompanySectionOpen(!companySectionOpen)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
+              >
+                <span className="font-bold text-sm text-amber-800 dark:text-amber-300">
+                  معلومات الشركة (اختياري)
+                </span>
+                <svg
+                  className={`w-4 h-4 text-amber-600 transition-transform ${companySectionOpen ? 'rotate-180' : ''}`}
+                  fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {companySectionOpen && (
+                <div className="p-4 space-y-3 bg-gray-50/50 dark:bg-gray-800/30">
+                  <p className="text-xs text-muted-foreground mb-2">
+                    هذه المعلومات ستُحفظ وتُستخدم تلقائياً في الفواتير القادمة. جميع الحقول اختيارية.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">اسم الشركة</Label>
+                      <Input
+                        value={form.companyName}
+                        onChange={(e) => setForm({ ...form, companyName: e.target.value })}
+                        placeholder="شركة عباد للنقل"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">العنوان</Label>
+                      <Input
+                        value={form.companyAddress}
+                        onChange={(e) => setForm({ ...form, companyAddress: e.target.value })}
+                        placeholder="العنوان"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">الهاتف</Label>
+                      <Input
+                        value={form.companyPhone}
+                        onChange={(e) => setForm({ ...form, companyPhone: e.target.value })}
+                        placeholder="رقم الهاتف"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">ICE</Label>
+                      <Input
+                        value={form.companyICE}
+                        onChange={(e) => setForm({ ...form, companyICE: e.target.value })}
+                        placeholder="رقم ICE"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">IFU</Label>
+                      <Input
+                        value={form.companyIFU}
+                        onChange={(e) => setForm({ ...form, companyIFU: e.target.value })}
+                        placeholder="رقم IFU"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">RC</Label>
+                      <Input
+                        value={form.companyRC}
+                        onChange={(e) => setForm({ ...form, companyRC: e.target.value })}
+                        placeholder="رقم RC"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="inv-date">
@@ -536,7 +672,7 @@ export default function InvoicesManager() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="inv-taxe-prof">نسبة الضريبة المهنية (%)</Label>
+                <Label htmlFor="inv-taxe-prof">نسبة الضريبة المهنية (%) <span className="text-muted-foreground">- اختياري</span></Label>
                 <Input
                   id="inv-taxe-prof"
                   type="number"
@@ -552,7 +688,7 @@ export default function InvoicesManager() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="inv-timbre">Timbre Fiscal</Label>
+                <Label htmlFor="inv-timbre">Timbre Fiscal <span className="text-muted-foreground">- اختياري</span></Label>
                 <Input
                   id="inv-timbre"
                   type="number"
@@ -607,14 +743,22 @@ export default function InvoicesManager() {
                 <span className="font-medium text-gray-900 dark:text-gray-100 text-left">
                   {formatCurrency(liveCalc.tvaAmount)}
                 </span>
-                <span className="text-gray-600 dark:text-gray-400">الضريبة المهنية ({form.taxeProfRate}%):</span>
-                <span className="font-medium text-gray-900 dark:text-gray-100 text-left">
-                  {formatCurrency(liveCalc.taxeProfAmount)}
-                </span>
-                <span className="text-gray-600 dark:text-gray-400">Timbre Fiscal:</span>
-                <span className="font-medium text-gray-900 dark:text-gray-100 text-left">
-                  {formatCurrency(form.timbreFiscal)}
-                </span>
+                {form.taxeProfRate > 0 && (
+                  <>
+                    <span className="text-gray-600 dark:text-gray-400">الضريبة المهنية ({form.taxeProfRate}%):</span>
+                    <span className="font-medium text-gray-900 dark:text-gray-100 text-left">
+                      {formatCurrency(liveCalc.taxeProfAmount)}
+                    </span>
+                  </>
+                )}
+                {form.timbreFiscal > 0 && (
+                  <>
+                    <span className="text-gray-600 dark:text-gray-400">Timbre Fiscal:</span>
+                    <span className="font-medium text-gray-900 dark:text-gray-100 text-left">
+                      {formatCurrency(form.timbreFiscal)}
+                    </span>
+                  </>
+                )}
                 <span className="text-gray-600 dark:text-gray-400 font-bold border-t border-amber-300 dark:border-amber-700 pt-2">
                   المبلغ TTC:
                 </span>
@@ -638,7 +782,7 @@ export default function InvoicesManager() {
                 disabled={submitting}
                 className="bg-amber-500 hover:bg-amber-600 text-white"
               >
-                {submitting && <Loader2 className="size-4 animate-spin ml-2" />}
+                {submitting && <Loader2 className="size-4 animate-spin" />}
                 {editingInvoice ? 'تحديث' : 'إنشاء'}
               </Button>
             </DialogFooter>
@@ -659,141 +803,168 @@ export default function InvoicesManager() {
               طباعة
             </Button>
           </div>
-          {printInvoice && (
-            <div className="border-2 border-gray-300 p-8 bg-white dark:bg-gray-900">
-              {/* Company Header */}
-              <div className="text-center mb-6">
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                  شركة عباد للنقل
-                </h1>
-                <p className="text-lg font-semibold text-gray-700 dark:text-gray-300 mt-2">
+          {printInvoice && (() => {
+            const ci = parseCompanyInfo(printInvoice.companyInfo);
+            return (
+              <div className="border-2 border-gray-300 p-8 bg-white dark:bg-gray-900">
+                {/* Company Header */}
+                <div className="text-center mb-4">
+                  <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                    {ci.name || 'شركة عباد للنقل'}
+                  </h1>
+                  {ci.address && (
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{ci.address}</p>
+                  )}
+                  {ci.phone && (
+                    <p className="text-sm text-gray-600 dark:text-gray-400">هاتف: {ci.phone}</p>
+                  )}
+                  <div className="flex items-center justify-center gap-4 mt-2 flex-wrap">
+                    {ci.ice && <span className="text-xs bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">ICE: {ci.ice}</span>}
+                    {ci.ifu && <span className="text-xs bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">IFU: {ci.ifu}</span>}
+                    {ci.rc && <span className="text-xs bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">RC: {ci.rc}</span>}
+                  </div>
+                </div>
+
+                <p className="text-lg font-semibold text-center text-gray-700 dark:text-gray-300 mt-4 mb-6">
                   فاتورة رسمية (Facture)
                 </p>
-              </div>
 
-              {/* Info Rows */}
-              <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm mb-6 border-b border-gray-300 pb-4">
-                <div className="flex gap-2">
-                  <span className="font-semibold text-gray-700 dark:text-gray-300">رقم الفاتورة:</span>
-                  <span className="text-gray-900 dark:text-gray-100">{printInvoice.number}</span>
+                {/* Info Rows */}
+                <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm mb-6 border-b border-gray-300 pb-4">
+                  <div className="flex gap-2">
+                    <span className="font-semibold text-gray-700 dark:text-gray-300">رقم الفاتورة:</span>
+                    <span className="text-gray-900 dark:text-gray-100">{printInvoice.number}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="font-semibold text-gray-700 dark:text-gray-300">التاريخ:</span>
+                    <span className="text-gray-900 dark:text-gray-100">{formatDate(printInvoice.date)}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="font-semibold text-gray-700 dark:text-gray-300">الزبون:</span>
+                    <span className="text-gray-900 dark:text-gray-100">{printInvoice.client.name}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="font-semibold text-gray-700 dark:text-gray-300">طريقة الدفع:</span>
+                    <span className="text-gray-900 dark:text-gray-100">{printInvoice.paymentMethod}</span>
+                  </div>
+                  {printInvoice.client.address && (
+                    <div className="flex gap-2">
+                      <span className="font-semibold text-gray-700 dark:text-gray-300">العنوان:</span>
+                      <span className="text-gray-900 dark:text-gray-100">{printInvoice.client.address}</span>
+                    </div>
+                  )}
+                  {printInvoice.client.phone && (
+                    <div className="flex gap-2">
+                      <span className="font-semibold text-gray-700 dark:text-gray-300">الهاتف:</span>
+                      <span className="text-gray-900 dark:text-gray-100">{printInvoice.client.phone}</span>
+                    </div>
+                  )}
+                  {printInvoice.client.ifu && (
+                    <div className="flex gap-2">
+                      <span className="font-semibold text-gray-700 dark:text-gray-300">IFU:</span>
+                      <span className="text-gray-900 dark:text-gray-100">{printInvoice.client.ifu}</span>
+                    </div>
+                  )}
+                  {printInvoice.client.ice && (
+                    <div className="flex gap-2">
+                      <span className="font-semibold text-gray-700 dark:text-gray-300">ICE:</span>
+                      <span className="text-gray-900 dark:text-gray-100">{printInvoice.client.ice}</span>
+                    </div>
+                  )}
+                  {printInvoice.client.rc && (
+                    <div className="flex gap-2">
+                      <span className="font-semibold text-gray-700 dark:text-gray-300">RC:</span>
+                      <span className="text-gray-900 dark:text-gray-100">{printInvoice.client.rc}</span>
+                    </div>
+                  )}
                 </div>
-                <div className="flex gap-2">
-                  <span className="font-semibold text-gray-700 dark:text-gray-300">التاريخ:</span>
-                  <span className="text-gray-900 dark:text-gray-100">{formatDate(printInvoice.date)}</span>
-                </div>
-                <div className="flex gap-2">
-                  <span className="font-semibold text-gray-700 dark:text-gray-300">الزبون:</span>
-                  <span className="text-gray-900 dark:text-gray-100">{printInvoice.client.name}</span>
-                </div>
-                <div className="flex gap-2">
-                  <span className="font-semibold text-gray-700 dark:text-gray-300">طريقة الدفع:</span>
-                  <span className="text-gray-900 dark:text-gray-100">{printInvoice.paymentMethod}</span>
-                </div>
-                <div className="flex gap-2">
-                  <span className="font-semibold text-gray-700 dark:text-gray-300">العنوان:</span>
-                  <span className="text-gray-900 dark:text-gray-100">{printInvoice.client.address || '—'}</span>
-                </div>
-                <div className="flex gap-2">
-                  <span className="font-semibold text-gray-700 dark:text-gray-300">الهاتف:</span>
-                  <span className="text-gray-900 dark:text-gray-100">{printInvoice.client.phone || '—'}</span>
-                </div>
-                <div className="flex gap-2">
-                  <span className="font-semibold text-gray-700 dark:text-gray-300">IFU:</span>
-                  <span className="text-gray-900 dark:text-gray-100">{printInvoice.client.ifu || '—'}</span>
-                </div>
-                <div className="flex gap-2">
-                  <span className="font-semibold text-gray-700 dark:text-gray-300">ICE:</span>
-                  <span className="text-gray-900 dark:text-gray-100">{printInvoice.client.ice || '—'}</span>
-                </div>
-                <div className="flex gap-2">
-                  <span className="font-semibold text-gray-700 dark:text-gray-300">RC:</span>
-                  <span className="text-gray-900 dark:text-gray-100">{printInvoice.client.rc || '—'}</span>
-                </div>
-              </div>
 
-              {/* Invoice Table */}
-              <div className="overflow-x-auto mb-6">
-                <table className="w-full text-sm border-collapse">
-                  <thead>
-                    <tr className="bg-amber-50 dark:bg-amber-900/20">
-                      <th className="border border-gray-300 px-3 py-2 font-semibold text-gray-700 dark:text-gray-300">م</th>
-                      <th className="border border-gray-300 px-3 py-2 font-semibold text-gray-700 dark:text-gray-300">الوصف</th>
-                      <th className="border border-gray-300 px-3 py-2 font-semibold text-gray-700 dark:text-gray-300 text-center">الكمية</th>
-                      <th className="border border-gray-300 px-3 py-2 font-semibold text-gray-700 dark:text-gray-300 text-center">سعر الوحدة</th>
-                      <th className="border border-gray-300 px-3 py-2 font-semibold text-gray-700 dark:text-gray-300 text-center">المبلغ HT</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="even:bg-gray-50 dark:even:bg-gray-800/50">
-                      <td className="border border-gray-300 px-3 py-2 text-center">1</td>
-                      <td className="border border-gray-300 px-3 py-2">خدمات النقل</td>
-                      <td className="border border-gray-300 px-3 py-2 text-center">1</td>
-                      <td className="border border-gray-300 px-3 py-2 text-center">{formatCurrency(printInvoice.htAmount)}</td>
-                      <td className="border border-gray-300 px-3 py-2 text-center">{formatCurrency(printInvoice.htAmount)}</td>
-                    </tr>
-                  </tbody>
-                  <tfoot>
-                    <tr>
-                      <td colSpan={4} className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">
-                        المبلغ HT:
-                      </td>
-                      <td className="border border-gray-300 px-3 py-2 text-center font-semibold">{formatCurrency(printInvoice.htAmount)}</td>
-                    </tr>
-                    <tr>
-                      <td colSpan={4} className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">
-                        TVA ({printInvoice.tvaRate}%):
-                      </td>
-                      <td className="border border-gray-300 px-3 py-2 text-center">{formatCurrency(printInvoice.tvaAmount)}</td>
-                    </tr>
-                    {printInvoice.taxeProfRate > 0 && (
+                {/* Invoice Table */}
+                <div className="overflow-x-auto mb-6">
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="bg-amber-50 dark:bg-amber-900/20">
+                        <th className="border border-gray-300 px-3 py-2 font-semibold text-gray-700 dark:text-gray-300">م</th>
+                        <th className="border border-gray-300 px-3 py-2 font-semibold text-gray-700 dark:text-gray-300">الوصف</th>
+                        <th className="border border-gray-300 px-3 py-2 font-semibold text-gray-700 dark:text-gray-300 text-center">الكمية</th>
+                        <th className="border border-gray-300 px-3 py-2 font-semibold text-gray-700 dark:text-gray-300 text-center">سعر الوحدة</th>
+                        <th className="border border-gray-300 px-3 py-2 font-semibold text-gray-700 dark:text-gray-300 text-center">المبلغ HT</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="even:bg-gray-50 dark:even:bg-gray-800/50">
+                        <td className="border border-gray-300 px-3 py-2 text-center">1</td>
+                        <td className="border border-gray-300 px-3 py-2">خدمات النقل</td>
+                        <td className="border border-gray-300 px-3 py-2 text-center">1</td>
+                        <td className="border border-gray-300 px-3 py-2 text-center">{formatCurrency(printInvoice.htAmount)}</td>
+                        <td className="border border-gray-300 px-3 py-2 text-center">{formatCurrency(printInvoice.htAmount)}</td>
+                      </tr>
+                    </tbody>
+                    <tfoot>
                       <tr>
                         <td colSpan={4} className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">
-                          الضريبة المهنية ({printInvoice.taxeProfRate}%):
+                          المبلغ HT:
                         </td>
-                        <td className="border border-gray-300 px-3 py-2 text-center">{formatCurrency(printInvoice.taxeProfAmount)}</td>
+                        <td className="border border-gray-300 px-3 py-2 text-center font-semibold">{formatCurrency(printInvoice.htAmount)}</td>
                       </tr>
-                    )}
-                    {printInvoice.timbreFiscal > 0 && (
-                      <tr>
-                        <td colSpan={4} className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">
-                          Timbre Fiscal:
+                      {printInvoice.tvaRate > 0 && (
+                        <tr>
+                          <td colSpan={4} className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">
+                            TVA ({printInvoice.tvaRate}%):
+                          </td>
+                          <td className="border border-gray-300 px-3 py-2 text-center">{formatCurrency(printInvoice.tvaAmount)}</td>
+                        </tr>
+                      )}
+                      {printInvoice.taxeProfRate > 0 && (
+                        <tr>
+                          <td colSpan={4} className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">
+                            الضريبة المهنية ({printInvoice.taxeProfRate}%):
+                          </td>
+                          <td className="border border-gray-300 px-3 py-2 text-center">{formatCurrency(printInvoice.taxeProfAmount)}</td>
+                        </tr>
+                      )}
+                      {printInvoice.timbreFiscal > 0 && (
+                        <tr>
+                          <td colSpan={4} className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">
+                            Timbre Fiscal:
+                          </td>
+                          <td className="border border-gray-300 px-3 py-2 text-center">{formatCurrency(printInvoice.timbreFiscal)}</td>
+                        </tr>
+                      )}
+                      <tr className="bg-amber-50 dark:bg-amber-900/20 font-bold">
+                        <td colSpan={4} className="border border-gray-300 px-3 py-3 text-left text-lg text-gray-900 dark:text-gray-100">
+                          المبلغ TTC:
                         </td>
-                        <td className="border border-gray-300 px-3 py-2 text-center">{formatCurrency(printInvoice.timbreFiscal)}</td>
+                        <td className="border border-gray-300 px-3 py-3 text-center text-xl text-amber-700 dark:text-amber-300">
+                          {formatCurrency(printInvoice.ttcAmount)}
+                        </td>
                       </tr>
-                    )}
-                    <tr className="bg-amber-50 dark:bg-amber-900/20 font-bold">
-                      <td colSpan={4} className="border border-gray-300 px-3 py-3 text-left text-lg text-gray-900 dark:text-gray-100">
-                        المبلغ TTC:
-                      </td>
-                      <td className="border border-gray-300 px-3 py-3 text-center text-xl text-amber-700 dark:text-amber-300">
-                        {formatCurrency(printInvoice.ttcAmount)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-
-              {/* Notes */}
-              {printInvoice.notes && (
-                <div className="text-sm mb-6">
-                  <span className="font-semibold text-gray-700 dark:text-gray-300">ملاحظات:</span>{' '}
-                  <span className="text-gray-900 dark:text-gray-100">{printInvoice.notes}</span>
+                    </tfoot>
+                  </table>
                 </div>
-              )}
 
-              {/* Signature Lines */}
-              <div className="grid grid-cols-2 gap-8 mt-12 pt-4">
-                <div className="text-center">
-                  <p className="font-semibold text-gray-700 dark:text-gray-300 mb-2">توقيع الزبون</p>
-                  <div className="border-b border-gray-400 dark:border-gray-600 pb-1">&nbsp;</div>
-                </div>
-                <div className="text-center">
-                  <p className="font-semibold text-gray-700 dark:text-gray-300 mb-2">توقيع شركة عباد للنقل</p>
-                  <div className="border-b border-gray-400 dark:border-gray-600 pb-1">&nbsp;</div>
+                {/* Notes */}
+                {printInvoice.notes && (
+                  <div className="text-sm mb-6">
+                    <span className="font-semibold text-gray-700 dark:text-gray-300">ملاحظات:</span>{' '}
+                    <span className="text-gray-900 dark:text-gray-100">{printInvoice.notes}</span>
+                  </div>
+                )}
+
+                {/* Signature Lines */}
+                <div className="grid grid-cols-2 gap-8 mt-12 pt-4">
+                  <div className="text-center">
+                    <p className="font-semibold text-gray-700 dark:text-gray-300 mb-2">توقيع الزبون</p>
+                    <div className="border-b border-gray-400 dark:border-gray-600 pb-1">&nbsp;</div>
+                  </div>
+                  <div className="text-center">
+                    <p className="font-semibold text-gray-700 dark:text-gray-300 mb-2">توقيع {ci.name || 'شركة عباد للنقل'}</p>
+                    <div className="border-b border-gray-400 dark:border-gray-600 pb-1">&nbsp;</div>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>

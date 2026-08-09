@@ -48,6 +48,7 @@ export async function PUT(
       timbreFiscal,
       status,
       notes,
+      companyInfo,
       clientId,
     } = body
 
@@ -65,6 +66,7 @@ export async function PUT(
         timbreFiscal,
         status,
         notes: notes || null,
+        companyInfo: companyInfo || null,
         clientId,
       },
       include: { client: true },
