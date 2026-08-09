@@ -31,6 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (stored) {
         const parsed = JSON.parse(stored);
         if (parsed?.id && parsed?.fullName) {
+          // eslint-disable-next-line react-hooks/set-state-in-effect
           setUser(parsed);
         }
       }

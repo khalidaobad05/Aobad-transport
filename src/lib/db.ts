@@ -8,10 +8,12 @@ const globalForPrisma = globalThis as unknown as {
 const tursoUrl = process.env.TURSO_DATABASE_URL
 const tursoAuthToken = process.env.TURSO_AUTH_TOKEN
 
-function createPrismaClient() {
+function createPrismaClient(): PrismaClient {
   // If Turso env vars exist, use cloud database
   if (tursoUrl) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { PrismaLibSQL } = require('@prisma/adapter-libsql')
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { createClient } = require('@libsql/client')
 
     const libsql = createClient({
