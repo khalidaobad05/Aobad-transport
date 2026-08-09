@@ -60,6 +60,8 @@ interface Shipment {
   date: string;
   status: string;
   description: string | null;
+  generator: string | null;
+  totalExpected: number | null;
   vehicle: Vehicle;
   orders: (OrderItem & { id: string; client: Client })[];
 }
@@ -68,6 +70,8 @@ interface ShipmentFormData {
   date: string;
   vehicleId: string;
   description: string;
+  generator: string;
+  totalExpected: string;
   status: string;
   orders: OrderItem[];
 }
@@ -97,6 +101,8 @@ const emptyForm: ShipmentFormData = {
   date: '',
   vehicleId: '',
   description: '',
+  generator: '',
+  totalExpected: '',
   status: 'قيد التوصيل',
   orders: [{ ...emptyOrder }],
 };
@@ -379,6 +385,18 @@ function ShipmentPrintView({
               <span>{shipment.description}</span>
             </div>
           )}
+          {shipment.generator && (
+            <div style={{ display: 'flex', gap: '16px' }}>
+              <span style={{ fontWeight: 'bold', color: '#555', minWidth: '140px' }}>المولد:</span>
+              <span>{shipment.generator}</span>
+            </div>
+          )}
+          {shipment.totalExpected != null && shipment.totalExpected > 0 && (
+            <div style={{ display: 'flex', gap: '16px' }}>
+              <span style={{ fontWeight: 'bold', color: '#555', minWidth: '140px' }}>المجموع المتوقع:</span>
+              <span style={{ fontWeight: 'bold' }}>{shipment.totalExpected} طرود</span>
+            </div>
+          )}
           <div style={{ display: 'flex', gap: '16px' }}>
             <span style={{ fontWeight: 'bold', color: '#555', minWidth: '140px' }}>الحالة:</span>
             <span>{shipment.status}</span>
@@ -560,6 +578,8 @@ export default function ShipmentsManager() {
       date: formatDateInput(shipment.date),
       vehicleId: shipment.vehicle.id,
       description: shipment.description ?? '',
+      generator: shipment.generator ?? '',
+      totalExpected: shipment.totalExpected ? String(shipment.totalExpected) : '',
       status: shipment.status,
       orders: shipment.orders.map((o) => ({
         id: o.id,
@@ -667,6 +687,8 @@ export default function ShipmentsManager() {
         date: form.date,
         vehicleId: form.vehicleId,
         description: form.description.trim() || undefined,
+        generator: form.generator.trim() || undefined,
+        totalExpected: form.totalExpected ? parseInt(form.totalExpected) || undefined : undefined,
         status: form.status,
         orders: resolvedOrders,
       };
@@ -826,10 +848,11 @@ export default function ShipmentsManager() {
                   <TableRow>
                     <TableHead>رقم الشحنة</TableHead>
                     <TableHead>التاريخ</TableHead>
+                    <TableHead>المولد</TableHead>
                     <TableHead>المركبة</TableHead>
-                    <TableHead>الصاحب</TableHead>
                     <TableHead>عدد الطلبيات</TableHead>
-                    <TableHead>إجمالي الطرود</TableHead>
+                    <TableHead>السعة الكلية</TableHead>
+                    <TableHead>المجموع المتوقع</TableHead>
                     <TableHead>الحصيلة</TableHead>
                     <TableHead>الحالة</TableHead>
                     <TableHead>الإجراءات</TableHead>
@@ -849,11 +872,18 @@ export default function ShipmentsManager() {
                         >
                           <TableCell className="font-medium">{shipment.number}</TableCell>
                           <TableCell>{formatDate(shipment.date)}</TableCell>
-                          <TableCell>{shipment.vehicle.registration}</TableCell>
                           <TableCell>
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                              {shipment.vehicle.ownerName}
-                            </span>
+                            {shipment.generator ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                                {shipment.generator}
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">---</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-sm">{shipment.vehicle.registration}</div>
+                            <div className="text-xs text-muted-foreground">{shipment.vehicle.ownerName}</div>
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-1">
@@ -861,7 +891,22 @@ export default function ShipmentsManager() {
                               <span className="font-semibold">{shipment.orders.length}</span>
                             </div>
                           </TableCell>
-                          <TableCell className="font-bold text-lg">{totalPkgs}</TableCell>
+                          <TableCell className="font-bold text-lg">{totalPkgs} <span className="text-xs font-normal text-muted-foreground">طرود</span></TableCell>
+                          <TableCell>
+                            {shipment.totalExpected != null && shipment.totalExpected > 0 ? (
+                              <div>
+                                <span className="font-bold">{shipment.totalExpected}</span>
+                                <span className="text-xs text-muted-foreground mr-1">طرود</span>
+                                {(() => {
+                                  const diff = totalPkgs - shipment.totalExpected;
+                                  if (diff === 0) return <span className="text-emerald-500 text-xs mr-1">(مطابق)</span>;
+                                  return <span className={`text-xs mr-1 ${diff > 0 ? 'text-blue-500' : 'text-red-500'}`}>({diff > 0 ? `+${diff}` : diff})</span>;
+                                })()}
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">---</span>
+                            )}
+                          </TableCell>
                           <TableCell className="font-bold text-emerald-600 dark:text-emerald-400">
                             {totalRev > 0 ? `${totalRev.toFixed(0)} د.م.` : '---'}
                           </TableCell>
@@ -906,11 +951,26 @@ export default function ShipmentsManager() {
                         {/* Expanded: show orders detail */}
                         {isExpanded && (
                           <TableRow key={`${shipment.id}-orders`} className="no-print">
-                            <TableCell colSpan={9} className="bg-amber-50/30 dark:bg-amber-900/10 px-8 py-4">
+                            <TableCell colSpan={10} className="bg-amber-50/30 dark:bg-amber-900/10 px-8 py-4">
                               <div className="space-y-2">
-                                <p className="text-sm font-semibold text-amber-700 dark:text-amber-400 mb-2">
-                                  تفاصيل الطلبيات ({shipment.orders.length})
-                                </p>
+                                <div className="flex items-center justify-between mb-2">
+                                  <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">
+                                    تفاصيل الطلبيات ({shipment.orders.length})
+                                  </p>
+                                  <div className="flex items-center gap-4 text-sm">
+                                    <span className="font-bold">العدد الكلي للطلبيات: <span className="text-amber-600 dark:text-amber-400">{shipment.orders.length}</span></span>
+                                    <span className="font-bold">السعة الكلية: <span className="text-amber-600 dark:text-amber-400">{totalPkgs} طرود</span></span>
+                                    {shipment.totalExpected != null && shipment.totalExpected > 0 && (
+                                      <span className="font-bold">المجموع المتوقع: <span className="text-amber-600 dark:text-amber-400">{shipment.totalExpected}</span>
+                                        {(() => {
+                                          const diff = totalPkgs - shipment.totalExpected;
+                                          if (diff === 0) return <span className="text-emerald-500 mr-1">(مطابق)</span>;
+                                          return <span className={`mr-1 ${diff > 0 ? 'text-blue-500' : 'text-red-500'}`}>({diff > 0 ? `+${diff}` : diff})</span>;
+                                        })()}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                                   {shipment.orders.map((order, oi) => (
                                     <div
@@ -1022,6 +1082,29 @@ export default function ShipmentsManager() {
               </div>
             </div>
 
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="shipment-generator">المولد <span className="text-muted-foreground">(اختياري)</span></Label>
+                <Input
+                  id="shipment-generator"
+                  value={form.generator}
+                  onChange={(e) => setForm({ ...form, generator: e.target.value })}
+                  placeholder="مثال: الدارة الكهربائية"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="shipment-total-expected">المجموع المتوقع <span className="text-muted-foreground">(اختياري)</span></Label>
+                <Input
+                  id="shipment-total-expected"
+                  type="number"
+                  min={0}
+                  value={form.totalExpected}
+                  onChange={(e) => setForm({ ...form, totalExpected: e.target.value })}
+                  placeholder="العدد الكلي المتوقع للطرود"
+                />
+              </div>
+            </div>
+
             {/* Orders Section */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -1096,6 +1179,44 @@ export default function ShipmentsManager() {
                   </div>
                 </div>
               ))}
+            </div>
+
+            {/* Live Statistics Summary */}
+            <div className="border rounded-xl p-4 bg-amber-50/50 dark:bg-amber-900/10 space-y-3">
+              <p className="text-sm font-bold text-amber-700 dark:text-amber-400">الإحصائيات الحية</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-foreground">{form.orders.filter(o => o.clientName.trim() && o.packageCount > 0).length}</p>
+                  <p className="text-xs text-muted-foreground">العدد الكلي للطلبيات</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-foreground">{form.orders.reduce((sum, o) => sum + (o.packageCount > 0 ? o.packageCount : 0), 0)}</p>
+                  <p className="text-xs text-muted-foreground">السعة الكلية (طرود)</p>
+                </div>
+                {form.totalExpected && parseInt(form.totalExpected) > 0 && (
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-foreground">{parseInt(form.totalExpected)}</p>
+                    <p className="text-xs text-muted-foreground">المجموع المتوقع</p>
+                  </div>
+                )}
+                {form.totalExpected && parseInt(form.totalExpected) > 0 && (
+                  <div className="text-center">
+                    {(() => {
+                      const actual = form.orders.reduce((sum, o) => sum + (o.packageCount > 0 ? o.packageCount : 0), 0);
+                      const expected = parseInt(form.totalExpected);
+                      const diff = actual - expected;
+                      return (
+                        <>
+                          <p className={`text-2xl font-bold ${diff === 0 ? 'text-emerald-600' : diff > 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                            {diff === 0 ? '=' : diff > 0 ? `+${diff}` : diff}
+                          </p>
+                          <p className="text-xs text-muted-foreground">الفرق</p>
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
             </div>
 
             <DialogFooter>

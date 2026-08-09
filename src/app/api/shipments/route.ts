@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { date, status, description, vehicleId, orders } = body
+    const { date, status, description, generator, totalExpected, vehicleId, orders } = body
 
     if (!date || !vehicleId) {
       return NextResponse.json(
@@ -112,6 +112,8 @@ export async function POST(request: NextRequest) {
         date: new Date(date),
         status: status || 'قيد التوصيل',
         description: description || null,
+        generator: generator || null,
+        totalExpected: totalExpected || null,
         vehicleId,
         orders: {
           create: orders.map((o: { clientId: string; packageCount: number; price?: number; description?: string }) => ({

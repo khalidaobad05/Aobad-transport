@@ -40,7 +40,7 @@ export async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { date, status, description, vehicleId, orders } = body
+    const { date, status, description, generator, totalExpected, vehicleId, orders } = body
 
     const shipment = await db.shipment.update({
       where: { id },
@@ -48,6 +48,8 @@ export async function PUT(
         date: date ? new Date(date) : undefined,
         status,
         description: description || null,
+        generator: generator !== undefined ? (generator || null) : undefined,
+        totalExpected: totalExpected !== undefined ? (totalExpected || null) : undefined,
         vehicleId,
       },
       include: {

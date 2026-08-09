@@ -39,13 +39,15 @@ model Vehicle {
 // Shipment = a trip made by a vehicle on a given date
 // Contains multiple orders for different customers
 model Shipment {
-  id          String   @id @default(cuid())
-  number      Int      @unique
-  date        DateTime
-  status      String   @default("قيد التوصيل")
-  description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String   @id @default(cuid())
+  number        Int      @unique
+  date          DateTime
+  status        String   @default("قيد التوصيل")
+  description   String?
+  generator     String?
+  totalExpected Int?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   vehicleId String
   vehicle   Vehicle @relation(fields: [vehicleId], references: [id])

@@ -1,0 +1,576 @@
+     1→   600→   600→   600→  }
+     2→   601→   601→   601→
+     3→   602→   602→   602→  // Ensure a client exists (find or create), returns the client ID
+     4→   603→   603→   603→  async function ensureClient(name: string): Promise<string | null> {
+     5→   604→   604→   604→    try {
+     6→   605→   605→   605→      const res = await fetch('/api/clients/ensure', {
+     7→   606→   606→   606→        method: 'POST',
+     8→   607→   607→   607→        headers: { 'Content-Type': 'application/json' },
+     9→   608→   608→   608→        body: JSON.stringify({ name }),
+    10→   609→   609→   609→      });
+    11→   610→   610→   610→      if (!res.ok) return null;
+    12→   611→   611→   611→      const json = await res.json();
+    13→   612→   612→   612→      if (json.created) {
+    14→   613→   613→   613→        fetchClients();
+    15→   614→   614→   614→      }
+    16→   615→   615→   615→      return json.data.id;
+    17→   616→   616→   616→    } catch {
+    18→   617→   617→   617→      return null;
+    19→   618→   618→   618→    }
+    20→   619→   619→   619→  }
+    21→   620→   620→   620→
+    22→   621→   621→   621→  async function handleSubmit(e: React.FormEvent) {
+    23→   622→   622→   622→    e.preventDefault();
+    24→   623→   623→   623→    if (!form.date) {
+    25→   624→   624→   624→      toast.error('التاريخ مطلوب');
+    26→   625→   625→   625→      return;
+    27→   626→   626→   626→    }
+    28→   627→   627→   627→    if (!form.vehicleId) {
+    29→   628→   628→   628→      toast.error('المركبة مطلوبة');
+    30→   629→   629→   629→      return;
+    31→   630→   630→   630→    }
+    32→   631→   631→   631→
+    33→   632→   632→   632→    // Validate orders - each must have a client name and package count
+    34→   633→   633→   633→    const validOrders = form.orders.filter(
+    35→   634→   634→   634→      (o) => o.clientName.trim() && o.packageCount > 0
+    36→   635→   635→   635→    );
+    37→   636→   636→   636→    if (validOrders.length === 0) {
+    38→   637→   637→   637→      toast.error('يجب إضافة طلبية واحدة صالحة على الأقل (اسم الزبون وعدد الطرود)');
+    39→   638→   638→   638→      return;
+    40→   639→   639→   639→    }
+    41→   640→   640→   640→
+    42→   641→   641→   641→    try {
+    43→   642→   642→   642→      setSubmitting(true);
+    44→   643→   643→   643→
+    45→   644→   644→   644→      // Step 1: Ensure all clients exist
+    46→   645→   645→   645→      const resolvedOrders = await Promise.all(
+    47→   646→   646→   646→        validOrders.map(async (o) => {
+    48→   647→   647→   647→          let clientId = o.clientId;
+    49→   648→   648→   648→          if (!clientId) {
+    50→   649→   649→   649→            clientId = (await ensureClient(o.clientName.trim())) || '';
+    51→   650→   650→   650→          }
+    52→   651→   651→   651→          return {
+    53→   652→   652→   652→            clientId,
+    54→   653→   653→   653→            packageCount: o.packageCount,
+    55→   654→   654→   654→            price: o.price > 0 ? o.price : undefined,
+    56→   655→   655→   655→            description: o.description?.trim() || undefined,
+    57→   656→   656→   656→          };
+    58→   657→   657→   657→        })
+    59→   658→   658→   658→      );
+    60→   659→   659→   659→
+    61→   660→   660→   660→      const unresolved = resolvedOrders.find((o) => !o.clientId);
+    62→   661→   661→   661→      if (unresolved) {
+    63→   662→   662→   662→        throw new Error('فشل في تسجيل أحد الزبائن');
+    64→   663→   663→   663→      }
+    65→   664→   664→   664→
+    66→   665→   665→   665→      // Step 2: Create/update the shipment
+    67→   666→   666→   666→      const body = {
+    68→   667→   667→   667→        date: form.date,
+    69→   668→   668→   668→        vehicleId: form.vehicleId,
+    70→   669→   669→   669→        description: form.description.trim() || undefined,
+    71→   670→   670→   670→        status: form.status,
+    72→   671→   671→   671→        orders: resolvedOrders,
+    73→   672→   672→   672→      };
+    74→   673→   673→   673→
+    75→   674→   674→   674→      if (editingShipment) {
+    76→   675→   675→   675→        const res = await fetch(`/api/shipments/${editingShipment.id}`, {
+    77→   676→   676→   676→          method: 'PUT',
+    78→   677→   677→   677→          headers: { 'Content-Type': 'application/json' },
+    79→   678→   678→   678→          body: JSON.stringify(body),
+    80→   679→   679→   679→        });
+    81→   680→   680→   680→        if (!res.ok) throw new Error('فشل في تحديث الشحنة');
+    82→   681→   681→   681→        toast.success('تم تحديث الشحنة بنجاح');
+    83→   682→   682→   682→      } else {
+    84→   683→   683→   683→        const res = await fetch('/api/shipments', {
+    85→   684→   684→   684→          method: 'POST',
+    86→   685→   685→   685→          headers: { 'Content-Type': 'application/json' },
+    87→   686→   686→   686→          body: JSON.stringify(body),
+    88→   687→   687→   687→        });
+    89→   688→   688→   688→        if (!res.ok) throw new Error('فشل في إضافة الشحنة');
+    90→   689→   689→   689→        toast.success('تم إضافة الشحنة بنجاح');
+    91→   690→   690→   690→      }
+    92→   691→   691→   691→
+    93→   692→   692→   692→      setDialogOpen(false);
+    94→   693→   693→   693→      fetchShipments();
+    95→   694→   694→   694→    } catch (err) {
+    96→   695→   695→   695→      toast.error(err instanceof Error ? err.message : 'حدث خطأ غير متوقع');
+    97→   696→   696→   696→    } finally {
+    98→   697→   697→   697→      setSubmitting(false);
+    99→   698→   698→   698→    }
+   100→   699→   699→   699→  }
+   101→   700→   700→   700→
+   102→   701→   701→   701→  async function handleDelete(id: string) {
+   103→   702→   702→   702→    try {
+   104→   703→   703→   703→      setDeletingId(id);
+   105→   704→   704→   704→      const res = await fetch(`/api/shipments/${id}`, { method: 'DELETE' });
+   106→   705→   705→   705→      if (!res.ok) throw new Error('فشل في حذف الشحنة');
+   107→   706→   706→   706→      toast.success('تم حذف الشحنة بنجاح');
+   108→   707→   707→   707→      fetchShipments();
+   109→   708→   708→   708→    } catch (err) {
+   110→   709→   709→   709→      toast.error(err instanceof Error ? err.message : 'حدث خطأ أثناء الحذف');
+   111→   710→   710→   710→    } finally {
+   112→   711→   711→   711→      setDeletingId(null);
+   113→   712→   712→   712→    }
+   114→   713→   713→   713→  }
+   115→   714→   714→   714→
+   116→   715→   715→   715→  function handleClearFilters() {
+   117→   716→   716→   716→    setFilterDate('');
+   118→   717→   717→   717→    setFilterStatus('الكل');
+   119→   718→   718→   718→    setFilterVehicleId('');
+   120→   719→   719→   719→  }
+   121→   720→   720→   720→
+   122→   721→   721→   721→  function handleSearch() {
+   123→   722→   722→   722→    fetchShipments();
+   124→   723→   723→   723→  }
+   125→   724→   724→   724→
+   126→   725→   725→   725→  function getTotalPackages(shipment: Shipment): number {
+   127→   726→   726→   726→    return shipment.orders.reduce((sum, o) => sum + o.packageCount, 0);
+   128→   727→   727→   727→  }
+   129→   728→   728→   728→
+   130→   729→   729→   729→  function getTotalRevenue(shipment: Shipment): number {
+   131→   730→   730→   730→    return shipment.orders.reduce((sum, o) => sum + ((o as Record<string, unknown>).price as number || 0), 0);
+   132→   731→   731→   731→  }
+   133→   732→   732→   732→
+   134→   733→   733→   733→  function openPrintDialog(shipment: Shipment) {
+   135→   734→   734→   734→    setPrintShipment(shipment);
+   136→   735→   735→   735→    setPrintDialogOpen(true);
+   137→   736→   736→   736→  }
+   138→   737→   737→   737→
+   139→   738→   738→   738→  function handlePrint(mode: 'detailed' | 'summary') {
+   140→   739→   739→   739→    setPrintMode(mode);
+   141→   740→   740→   740→    setPrintDialogOpen(false);
+   142→   741→   741→   741→    // Small delay to let React render the print view, then print
+   143→   742→   742→   742→    setTimeout(() => {
+   144→   743→   743→   743→      window.print();
+   145→   744→   744→   744→    }, 200);
+   146→   745→   745→   745→  }
+   147→   746→   746→   746→
+   148→   747→   747→   747→  return (
+   149→   748→   748→   748→    <div className="space-y-6">
+   150→   749→   749→   749→      {/* Filter Bar */}
+   151→   750→   750→   750→      <Card className="bg-white dark:bg-gray-900 border shadow-sm no-print">
+   152→   751→   751→   751→        <CardContent className="p-4">
+   153→   752→   752→   752→          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+   154→   753→   753→   753→            <div className="space-y-2">
+   155→   754→   754→   754→              <Label htmlFor="filter-date" className="text-sm">التاريخ</Label>
+   156→   755→   755→   755→              <Input
+   157→   756→   756→   756→                id="filter-date"
+   158→   757→   757→   757→                type="date"
+   159→   758→   758→   758→                value={filterDate}
+   160→   759→   759→   759→                onChange={(e) => setFilterDate(e.target.value)}
+   161→   760→   760→   760→                className="w-full"
+   162→   761→   761→   761→              />
+   163→   762→   762→   762→            </div>
+   164→   763→   763→   763→            <div className="space-y-2">
+   165→   764→   764→   764→              <Label className="text-sm">الحالة</Label>
+   166→   765→   765→   765→              <Select value={filterStatus} onValueChange={setFilterStatus}>
+   167→   766→   766→   766→                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+   168→   767→   767→   767→                <SelectContent>
+   169→   768→   768→   768→                  {STATUS_OPTIONS.map((opt) => (
+   170→   769→   769→   769→                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+   171→   770→   770→   770→                  ))}
+   172→   771→   771→   771→                </SelectContent>
+   173→   772→   772→   772→              </Select>
+   174→   773→   773→   773→            </div>
+   175→   774→   774→   774→            <div className="space-y-2">
+   176→   775→   775→   775→              <Label className="text-sm">المركبة</Label>
+   177→   776→   776→   776→              <Select value={filterVehicleId || 'all'} onValueChange={(v) => setFilterVehicleId(v === 'all' ? '' : v)}>
+   178→   777→   777→   777→                <SelectTrigger className="w-full"><SelectValue placeholder="الكل" /></SelectTrigger>
+   179→   778→   778→   778→                <SelectContent>
+   180→   779→   779→   779→                  <SelectItem value="all">الكل</SelectItem>
+   181→   780→   780→   780→                  {vehicles.map((v) => (
+   182→   781→   781→   781→                    <SelectItem key={v.id} value={v.id}>
+   183→   782→   782→   782→                      {v.registration} - {v.driverName}
+   184→   783→   783→   783→                    </SelectItem>
+   185→   784→   784→   784→                  ))}
+   186→   785→   785→   785→                </SelectContent>
+   187→   786→   786→   786→              </Select>
+   188→   787→   787→   787→            </div>
+   189→   788→   788→   788→            <div className="flex items-end gap-2">
+   190→   789→   789→   789→              <Button onClick={handleSearch} className="bg-amber-500 hover:bg-amber-600 text-white flex-1">
+   191→   790→   790→   790→                <Search className="size-4" />
+   192→   791→   791→   791→                بحث
+   193→   792→   792→   792→              </Button>
+   194→   793→   793→   793→              <Button variant="outline" onClick={handleClearFilters} className="flex-1">
+   195→   794→   794→   794→                <X className="size-4" />
+   196→   795→   795→   795→                مسح
+   197→   796→   796→   796→              </Button>
+   198→   797→   797→   797→            </div>
+   199→   798→   798→   798→          </div>
+   200→   799→   799→   799→        </CardContent>
+   201→   800→   800→   800→      </Card>
+   202→   801→   801→   801→
+   203→   802→   802→   802→      {/* Header with Add Button */}
+   204→   803→   803→   803→      <div className="flex items-center justify-between no-print">
+   205→   804→   804→   804→        <Button onClick={openCreateDialog} className="bg-amber-500 hover:bg-amber-600 text-white">
+   206→   805→   805→   805→          <Plus className="size-4" />
+   207→   806→   806→   806→          إضافة شحنة
+   208→   807→   807→   807→        </Button>
+   209→   808→   808→   808→      </div>
+   210→   809→   809→   809→
+   211→   810→   810→   810→      {/* Shipments Table */}
+   212→   811→   811→   811→      <Card className="bg-white dark:bg-gray-900 border shadow-sm">
+   213→   812→   812→   812→        <CardHeader className="p-4 pb-0">
+   214→   813→   813→   813→          <CardTitle className="text-lg">الشحنات</CardTitle>
+   215→   814→   814→   814→        </CardHeader>
+   216→   815→   815→   815→        <CardContent className="p-0">
+   217→   816→   816→   816→          {loading ? (
+   218→   817→   817→   817→            <div className="p-6 space-y-3">
+   219→   818→   818→   818→              {Array.from({ length: 5 }).map((_, i) => (
+   220→   819→   819→   819→                <Skeleton key={i} className="h-10 w-full" />
+   221→   820→   820→   820→              ))}
+   222→   821→   821→   821→            </div>
+   223→   822→   822→   822→          ) : shipments.length > 0 ? (
+   224→   823→   823→   823→            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+   225→   824→   824→   824→              <Table>
+   226→   825→   825→   825→                <TableHeader>
+   227→   826→   826→   826→                  <TableRow>
+   228→   827→   827→   827→                    <TableHead>رقم الشحنة</TableHead>
+   229→   828→   828→   828→                    <TableHead>التاريخ</TableHead>
+   230→   829→   829→   829→                    <TableHead>المركبة</TableHead>
+   231→   830→   830→   830→                    <TableHead>الصاحب</TableHead>
+   232→   831→   831→   831→                    <TableHead>عدد الطلبيات</TableHead>
+   233→   832→   832→   832→                    <TableHead>إجمالي الطرود</TableHead>
+   234→   833→   833→   833→                    <TableHead>الحصيلة</TableHead>
+   235→   834→   834→   834→                    <TableHead>الحالة</TableHead>
+   236→   835→   835→   835→                    <TableHead>الإجراءات</TableHead>
+   237→   836→   836→   836→                  </TableRow>
+   238→   837→   837→   837→                </TableHeader>
+   239→   838→   838→   838→                <TableBody>
+   240→   839→   839→   839→                  {shipments.map((shipment) => {
+   241→   840→   840→   840→                    const isExpanded = expandedShipment === shipment.id;
+   242→   841→   841→   841→                    const totalPkgs = getTotalPackages(shipment);
+   243→   842→   842→   842→                    const totalRev = getTotalRevenue(shipment);
+   244→   843→   843→   843→                    return (
+   245→   844→   844→   844→                      <>
+   246→   845→   845→   845→                        <TableRow
+   247→   846→   846→   846→                          key={shipment.id}
+   248→   847→   847→   847→                          className="cursor-pointer hover:bg-amber-50/50 dark:hover:bg-amber-900/10 no-print"
+   249→   848→   848→   848→                          onClick={() => setExpandedShipment(isExpanded ? null : shipment.id)}
+   250→   849→   849→   849→                        >
+   251→   850→   850→   850→                          <TableCell className="font-medium">{shipment.number}</TableCell>
+   252→   851→   851→   851→                          <TableCell>{formatDate(shipment.date)}</TableCell>
+   253→   852→   852→   852→                          <TableCell>{shipment.vehicle.registration}</TableCell>
+   254→   853→   853→   853→                          <TableCell>
+   255→   854→   854→   854→                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+   256→   855→   855→   855→                              {shipment.vehicle.ownerName}
+   257→   856→   856→   856→                            </span>
+   258→   857→   857→   857→                          </TableCell>
+   259→   858→   858→   858→                          <TableCell>
+   260→   859→   859→   859→                            <div className="flex items-center gap-1">
+   261→   860→   860→   860→                              <Package className="size-3.5 text-muted-foreground" />
+   262→   861→   861→   861→                              <span className="font-semibold">{shipment.orders.length}</span>
+   263→   862→   862→   862→                            </div>
+   264→   863→   863→   863→                          </TableCell>
+   265→   864→   864→   864→                          <TableCell className="font-bold text-lg">{totalPkgs}</TableCell>
+   266→   865→   865→   865→                          <TableCell className="font-bold text-emerald-600 dark:text-emerald-400">
+   267→   866→   866→   866→                            {totalRev > 0 ? `${totalRev.toFixed(0)} د.م.` : '---'}
+   268→   867→   867→   867→                          </TableCell>
+   269→   868→   868→   868→                          <TableCell>{getStatusBadge(shipment.status)}</TableCell>
+   270→   869→   869→   869→                          <TableCell>
+   271→   870→   870→   870→                            <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+   272→   871→   871→   871→                              <Button
+   273→   872→   872→   872→                                variant="ghost"
+   274→   873→   873→   873→                                size="icon"
+   275→   874→   874→   874→                                onClick={() => openEditDialog(shipment)}
+   276→   875→   875→   875→                                className="text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+   277→   876→   876→   876→                                title="تعديل"
+   278→   877→   877→   877→                              >
+   279→   878→   878→   878→                                <Pencil className="size-4" />
+   280→   879→   879→   879→                              </Button>
+   281→   880→   880→   880→                              <Button
+   282→   881→   881→   881→                                variant="ghost"
+   283→   882→   882→   882→                                size="icon"
+   284→   883→   883→   883→                                onClick={() => openPrintDialog(shipment)}
+   285→   884→   884→   884→                                className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+   286→   885→   885→   885→                                title="طباعة"
+   287→   886→   886→   886→                              >
+   288→   887→   887→   887→                                <Printer className="size-4" />
+   289→   888→   888→   888→                              </Button>
+   290→   889→   889→   889→                              <Button
+   291→   890→   890→   890→                                variant="ghost"
+   292→   891→   891→   891→                                size="icon"
+   293→   892→   892→   892→                                onClick={() => handleDelete(shipment.id)}
+   294→   893→   893→   893→                                disabled={deletingId === shipment.id}
+   295→   894→   894→   894→                                className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+   296→   895→   895→   895→                                title="حذف"
+   297→   896→   896→   896→                              >
+   298→   897→   897→   897→                                {deletingId === shipment.id ? (
+   299→   898→   898→   898→                                  <Loader2 className="size-4 animate-spin" />
+   300→   899→   899→   899→                                ) : (
+   301→   900→   900→   900→                                  <Trash2 className="size-4" />
+   302→   901→   901→   901→                                )}
+   303→   902→   902→   902→                              </Button>
+   304→   903→   903→   903→                            </div>
+   305→   904→   904→   904→                          </TableCell>
+   306→   905→   905→   905→                        </TableRow>
+   307→   906→   906→   906→                        {/* Expanded: show orders detail */}
+   308→   907→   907→   907→                        {isExpanded && (
+   309→   908→   908→   908→                          <TableRow key={`${shipment.id}-orders`} className="no-print">
+   310→   909→   909→   909→                            <TableCell colSpan={9} className="bg-amber-50/30 dark:bg-amber-900/10 px-8 py-4">
+   311→   910→   910→   910→                              <div className="space-y-2">
+   312→   911→   911→   911→                                <p className="text-sm font-semibold text-amber-700 dark:text-amber-400 mb-2">
+   313→   912→   912→   912→                                  تفاصيل الطلبيات ({shipment.orders.length})
+   314→   913→   913→   913→                                </p>
+   315→   914→   914→   914→                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+   316→   915→   915→   915→                                  {shipment.orders.map((order, oi) => (
+   317→   916→   916→   916→                                    <div
+   318→   917→   917→   917→                                      key={order.id}
+   319→   918→   918→   918→                                      className="border rounded-lg p-3 bg-white dark:bg-gray-800"
+   320→   919→   919→   919→                                    >
+   321→   920→   920→   920→                                      <div className="flex items-center justify-between mb-1">
+   322→   921→   921→   921→                                        <span className="text-xs text-muted-foreground">طلبية {oi + 1}</span>
+   323→   922→   922→   922→                                        <Badge variant="secondary" className="text-xs">
+   324→   923→   923→   923→                                          {order.packageCount} طرود
+   325→   924→   924→   924→                                        </Badge>
+   326→   925→   925→   925→                                      </div>
+   327→   926→   926→   926→                                      <p className="font-semibold text-sm">{order.client.name}</p>
+   328→   927→   927→   927→                                      {(order as Record<string, unknown>).price as number > 0 && (
+   329→   928→   928→   928→                                        <p className="text-sm text-emerald-600 dark:text-emerald-400 font-bold mt-1">
+   330→   929→   929→   929→                                          {(order as Record<string, unknown>).price as number} د.م.
+   331→   930→   930→   930→                                        </p>
+   332→   931→   931→   931→                                      )}
+   333→   932→   932→   932→                                      {order.description && (
+   334→   933→   933→   933→                                        <p className="text-xs text-muted-foreground mt-1">{order.description}</p>
+   335→   934→   934→   934→                                      )}
+   336→   935→   935→   935→                                    </div>
+   337→   936→   936→   936→                                  ))}
+   338→   937→   937→   937→                                </div>
+   339→   938→   938→   938→                              </div>
+   340→   939→   939→   939→                            </TableCell>
+   341→   940→   940→   940→                          </TableRow>
+   342→   941→   941→   941→                        )}
+   343→   942→   942→   942→                      </>
+   344→   943→   943→   943→                    );
+   345→   944→   944→   944→                  })}
+   346→   945→   945→   945→                </TableBody>
+   347→   946→   946→   946→              </Table>
+   348→   947→   947→   947→            </div>
+   349→   948→   948→   948→          ) : (
+   350→   949→   949→   949→            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+   351→   950→   950→   950→              <p className="text-base">لا توجد شحنات</p>
+   352→   951→   951→   951→              <p className="text-sm mt-1">
+   353→   952→   952→   952→                اضغط على &quot;إضافة شحنة&quot; لإضافة شحنة جديدة
+   354→   953→   953→   953→              </p>
+   355→   954→   954→   954→            </div>
+   356→   955→   955→   955→          )}
+   357→   956→   956→   956→        </CardContent>
+   358→   957→   957→   957→      </Card>
+   359→   958→   958→   958→
+   360→   959→   959→   959→      {/* Create / Edit Dialog */}
+   361→   960→   960→   960→      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+   362→   961→   961→   961→        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+   363→   962→   962→   962→          <DialogHeader>
+   364→   963→   963→   963→            <DialogTitle>
+   365→   964→   964→   964→              {editingShipment ? 'تعديل الشحنة' : 'إضافة شحنة جديدة'}
+   366→   965→   965→   965→            </DialogTitle>
+   367→   966→   966→   966→          </DialogHeader>
+   368→   967→   967→   967→          <form onSubmit={handleSubmit} className="space-y-4">
+   369→   968→   968→   968→            <div className="grid grid-cols-2 gap-4">
+   370→   969→   969→   969→              <div className="space-y-2">
+   371→   970→   970→   970→                <Label htmlFor="shipment-date">التاريخ <span className="text-red-500">*</span></Label>
+   372→   971→   971→   971→                <Input
+   373→   972→   972→   972→                  id="shipment-date"
+   374→   973→   973→   973→                  type="date"
+   375→   974→   974→   974→                  value={form.date}
+   376→   975→   975→   975→                  onChange={(e) => setForm({ ...form, date: e.target.value })}
+   377→   976→   976→   976→                  required
+   378→   977→   977→   977→                />
+   379→   978→   978→   978→              </div>
+   380→   979→   979→   979→              <div className="space-y-2">
+   381→   980→   980→   980→                <Label>المركبة <span className="text-red-500">*</span></Label>
+   382→   981→   981→   981→                <Select
+   383→   982→   982→   982→                  value={form.vehicleId}
+   384→   983→   983→   983→                  onValueChange={(val) => setForm({ ...form, vehicleId: val })}
+   385→   984→   984→   984→                >
+   386→   985→   985→   985→                  <SelectTrigger className="w-full">
+   387→   986→   986→   986→                    <SelectValue placeholder="اختر المركبة" />
+   388→   987→   987→   987→                  </SelectTrigger>
+   389→   988→   988→   988→                  <SelectContent>
+   390→   989→   989→   989→                    {vehicles.map((v) => (
+   391→   990→   990→   990→                      <SelectItem key={v.id} value={v.id}>
+   392→   991→   991→   991→                        {v.registration} - {v.driverName} ({v.ownerName})
+   393→   992→   992→   992→                      </SelectItem>
+   394→   993→   993→   993→                    ))}
+   395→   994→   994→   994→                  </SelectContent>
+   396→   995→   995→   995→                </Select>
+   397→   996→   996→   996→              </div>
+   398→   997→   997→   997→            </div>
+   399→   998→   998→   998→
+   400→   999→   999→   999→            <div className="grid grid-cols-2 gap-4">
+   401→  1000→  1000→  1000→              <div className="space-y-2">
+   402→  1001→  1001→  1001→                <Label>حالة الشحنة</Label>
+   403→  1002→  1002→  1002→                <Select
+   404→  1003→  1003→  1003→                  value={form.status}
+   405→  1004→  1004→  1004→                  onValueChange={(val) => setForm({ ...form, status: val })}
+   406→  1005→  1005→  1005→                >
+   407→  1006→  1006→  1006→                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+   408→  1007→  1007→  1007→                  <SelectContent>
+   409→  1008→  1008→  1008→                    {STATUS_FORM_OPTIONS.map((opt) => (
+   410→  1009→  1009→  1009→                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+   411→  1010→  1010→  1010→                    ))}
+   412→  1011→  1011→  1011→                  </SelectContent>
+   413→  1012→  1012→  1012→                </Select>
+   414→  1013→  1013→  1013→              </div>
+   415→  1014→  1014→  1014→              <div className="space-y-2">
+   416→  1015→  1015→  1015→                <Label htmlFor="shipment-desc">وصف الشحنة</Label>
+   417→  1016→  1016→  1016→                <Input
+   418→  1017→  1017→  1017→                  id="shipment-desc"
+   419→  1018→  1018→  1018→                  value={form.description}
+   420→  1019→  1019→  1019→                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+   421→  1020→  1020→  1020→                  placeholder="مثال: رحلة الدار البيضاء - الرباط"
+   422→  1021→  1021→  1021→                />
+   423→  1022→  1022→  1022→              </div>
+   424→  1023→  1023→  1023→            </div>
+   425→  1024→  1024→  1024→
+   426→  1025→  1025→  1025→            {/* Orders Section */}
+   427→  1026→  1026→  1026→            <div className="space-y-3">
+   428→  1027→  1027→  1027→              <div className="flex items-center justify-between">
+   429→  1028→  1028→  1028→                <Label className="text-base font-bold">الطلبيات <span className="text-red-500">*</span></Label>
+   430→  1029→  1029→  1029→                <Button type="button" variant="outline" size="sm" onClick={addOrder}>
+   431→  1030→  1030→  1030→                  <Plus className="size-3.5 ml-1" />
+   432→  1031→  1031→  1031→                  إضافة طلبية
+   433→  1032→  1032→  1032→                </Button>
+   434→  1033→  1033→  1033→              </div>
+   435→  1034→  1034→  1034→
+   436→  1035→  1035→  1035→              {form.orders.map((order, index) => (
+   437→  1036→  1036→  1036→                <div
+   438→  1037→  1037→  1037→                  key={index}
+   439→  1038→  1038→  1038→                  className="border rounded-lg p-3 space-y-3 bg-muted/30"
+   440→  1039→  1039→  1039→                >
+   441→  1040→  1040→  1040→                  <div className="flex items-center justify-between">
+   442→  1041→  1041→  1041→                    <span className="text-sm font-semibold text-amber-700 dark:text-amber-400">
+   443→  1042→  1042→  1042→                      طلبية {index + 1}
+   444→  1043→  1043→  1043→                    </span>
+   445→  1044→  1044→  1044→                    {form.orders.length > 1 && (
+   446→  1045→  1045→  1045→                      <Button
+   447→  1046→  1046→  1046→                        type="button"
+   448→  1047→  1047→  1047→                        variant="ghost"
+   449→  1048→  1048→  1048→                        size="icon"
+   450→  1049→  1049→  1049→                        className="size-7 text-red-500 hover:text-red-700"
+   451→  1050→  1050→  1050→                        onClick={() => removeOrder(index)}
+   452→  1051→  1051→  1051→                      >
+   453→  1052→  1052→  1052→                        <Trash2 className="size-3.5" />
+   454→  1053→  1053→  1053→                      </Button>
+   455→  1054→  1054→  1054→                    )}
+   456→  1055→  1055→  1055→                  </div>
+   457→  1056→  1056→  1056→                  <div className="space-y-1">
+   458→  1057→  1057→  1057→                    <Label className="text-xs">اسم الزبون <span className="text-red-500">*</span></Label>
+   459→  1058→  1058→  1058→                    <ClientAutocomplete
+   460→  1059→  1059→  1059→                      value={order.clientName}
+   461→  1060→  1060→  1060→                      onChange={(clientId, clientName) =>
+   462→  1061→  1061→  1061→                        updateOrderClient(index, clientId, clientName)
+   463→  1062→  1062→  1062→                      }
+   464→  1063→  1063→  1063→                      clients={clients}
+   465→  1064→  1064→  1064→                    />
+   466→  1065→  1065→  1065→                  </div>
+   467→  1066→  1066→  1066→                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+   468→  1067→  1067→  1067→                    <div className="space-y-1">
+   469→  1068→  1068→  1068→                      <Label className="text-xs">عدد الطرود <span className="text-red-500">*</span></Label>
+   470→  1069→  1069→  1069→                      <Input
+   471→  1070→  1070→  1070→                        type="number"
+   472→  1071→  1071→  1071→                        min={1}
+   473→  1072→  1072→  1072→                        value={order.packageCount || ''}
+   474→  1073→  1073→  1073→                        onChange={(e) => updateOrderField(index, 'packageCount', parseInt(e.target.value) || 0)}
+   475→  1074→  1074→  1074→                        placeholder="عدد الطرود"
+   476→  1075→  1075→  1075→                      />
+   477→  1076→  1076→  1076→                    </div>
+   478→  1077→  1077→  1077→                    <div className="space-y-1">
+   479→  1078→  1078→  1078→                      <Label className="text-xs">السعر (د.م.) <span className="text-muted-foreground">- اختياري</span></Label>
+   480→  1079→  1079→  1079→                      <Input
+   481→  1080→  1080→  1080→                        type="number"
+   482→  1081→  1081→  1081→                        min={0}
+   483→  1082→  1082→  1082→                        step={0.01}
+   484→  1083→  1083→  1083→                        value={order.price || ''}
+   485→  1084→  1084→  1084→                        onChange={(e) => updateOrderField(index, 'price', parseFloat(e.target.value) || 0)}
+   486→  1085→  1085→  1085→                        placeholder="يُدخل لاحقاً"
+   487→  1086→  1086→  1086→                      />
+   488→  1087→  1087→  1087→                    </div>
+   489→  1088→  1088→  1088→                    <div className="space-y-1">
+   490→  1089→  1089→  1089→                      <Label className="text-xs">وصف (اختياري)</Label>
+   491→  1090→  1090→  1090→                      <Input
+   492→  1091→  1091→  1091→                        value={order.description}
+   493→  1092→  1092→  1092→                        onChange={(e) => updateOrderField(index, 'description', e.target.value)}
+   494→  1093→  1093→  1093→                        placeholder="وصف الطلبية"
+   495→  1094→  1094→  1094→                      />
+   496→  1095→  1095→  1095→                    </div>
+   497→  1096→  1096→  1096→                  </div>
+   498→  1097→  1097→  1097→                </div>
+   499→  1098→  1098→  1098→              ))}
+   500→  1099→  1099→  1099→            </div>
+   501→  1100→  1100→  1100→
+   502→  1101→  1101→  1101→            <DialogFooter>
+   503→  1102→  1102→  1102→              <Button
+   504→  1103→  1103→  1103→                type="button"
+   505→  1104→  1104→  1104→                variant="outline"
+   506→  1105→  1105→  1105→                onClick={() => setDialogOpen(false)}
+   507→  1106→  1106→  1106→                disabled={submitting}
+   508→  1107→  1107→  1107→              >
+   509→  1108→  1108→  1108→                إلغاء
+   510→  1109→  1109→  1109→              </Button>
+   511→  1110→  1110→  1110→              <Button
+   512→  1111→  1111→  1111→                type="submit"
+   513→  1112→  1112→  1112→                disabled={submitting}
+   514→  1113→  1113→  1113→                className="bg-amber-500 hover:bg-amber-600 text-white"
+   515→  1114→  1114→  1114→              >
+   516→  1115→  1115→  1115→                {submitting && <Loader2 className="size-4 animate-spin" />}
+   517→  1116→  1116→  1116→                {editingShipment ? 'تحديث' : 'إضافة'}
+   518→  1117→  1117→  1117→              </Button>
+   519→  1118→  1118→  1118→            </DialogFooter>
+   520→  1119→  1119→  1119→          </form>
+   521→  1120→  1120→  1120→        </DialogContent>
+   522→  1121→  1121→  1121→      </Dialog>
+   523→  1122→  1122→  1122→
+   524→  1123→  1123→  1123→      {/* Print Mode Selection Dialog */}
+   525→  1124→  1124→  1124→      <Dialog open={printDialogOpen} onOpenChange={setPrintDialogOpen}>
+   526→  1125→  1125→  1125→        <DialogContent className="sm:max-w-md">
+   527→  1126→  1126→  1126→          <DialogHeader>
+   528→  1127→  1127→  1127→            <DialogTitle>اختر نوع الطباعة</DialogTitle>
+   529→  1128→  1128→  1128→          </DialogHeader>
+   530→  1129→  1129→  1129→          <div className="space-y-3 py-4">
+   531→  1130→  1130→  1130→            <button
+   532→  1131→  1131→  1131→              type="button"
+   533→  1132→  1132→  1132→              onClick={() => handlePrint('detailed')}
+   534→  1133→  1133→  1133→              className="w-full border-2 border-gray-200 dark:border-gray-700 rounded-xl p-4 text-right hover:border-amber-400 hover:bg-amber-50/50 dark:hover:bg-amber-900/10 transition-all"
+   535→  1134→  1134→  1134→            >
+   536→  1135→  1135→  1135→              <div className="flex items-center gap-3">
+   537→  1136→  1136→  1136→                <div className="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
+   538→  1137→  1137→  1137→                  <FileText className="size-5 text-amber-600 dark:text-amber-400" />
+   539→  1138→  1138→  1138→                </div>
+   540→  1139→  1139→  1139→                <div>
+   541→  1140→  1140→  1140→                  <p className="font-bold text-sm">طباعة تفصيلية</p>
+   542→  1141→  1141→  1141→                  <p className="text-xs text-muted-foreground mt-0.5">
+   543→  1142→  1142→  1142→                    طباعة الشحنة مع جميع تفاصيل البضائع والطلبيات وأسماء الزبائن والأسعار
+   544→  1143→  1143→  1143→                  </p>
+   545→  1144→  1144→  1144→                </div>
+   546→  1145→  1145→  1145→              </div>
+   547→  1146→  1146→  1146→            </button>
+   548→  1147→  1147→  1147→            <button
+   549→  1148→  1148→  1148→              type="button"
+   550→  1149→  1149→  1149→              onClick={() => handlePrint('summary')}
+   551→  1150→  1150→  1150→              className="w-full border-2 border-gray-200 dark:border-gray-700 rounded-xl p-4 text-right hover:border-blue-400 hover:bg-blue-50/50 dark:hover:bg-blue-900/10 transition-all"
+   552→  1151→  1151→  1151→            >
+   553→  1152→  1152→  1152→              <div className="flex items-center gap-3">
+   554→  1153→  1153→  1153→                <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
+   555→  1154→  1154→  1154→                  <List className="size-5 text-blue-600 dark:text-blue-400" />
+   556→  1155→  1155→  1155→                </div>
+   557→  1156→  1156→  1156→                <div>
+   558→  1157→  1157→  1157→                  <p className="font-bold text-sm">طباعة الحصيلة الكلية</p>
+   559→  1158→  1158→  1158→                  <p className="text-xs text-muted-foreground mt-0.5">
+   560→  1159→  1159→  1159→                    طباعة الشحنة بإجمالي عدد الطرود والحصيلة المالية فقط بدون تفاصيل البضائع
+   561→  1160→  1160→  1160→                  </p>
+   562→  1161→  1161→  1161→                </div>
+   563→  1162→  1162→  1162→              </div>
+   564→  1163→  1163→  1163→            </button>
+   565→  1164→  1164→  1164→          </div>
+   566→  1165→  1165→  1165→        </DialogContent>
+   567→  1166→  1166→  1166→      </Dialog>
+   568→  1167→  1167→  1167→
+   569→  1168→  1168→  1168→      {/* Print View (hidden, shown only during print) */}
+   570→  1169→  1169→  1169→      {printShipment && (
+   571→  1170→  1170→  1170→        <ShipmentPrintView shipment={printShipment} mode={printMode} />
+   572→  1171→  1171→  1171→      )}
+   573→  1172→  1172→  1172→    </div>
+   574→  1173→  1173→  1173→  );
+   575→
+   576→[showing lines 600-1173 of 1174; use offset=1174 with limit to continue reading]

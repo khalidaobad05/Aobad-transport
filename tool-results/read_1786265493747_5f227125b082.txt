@@ -1,0 +1,1174 @@
+     1→'use client';
+     2→
+     3→import { useState, useEffect, useCallback, useRef } from 'react';
+     4→import { toast } from 'sonner';
+     5→import { Plus, Pencil, Trash2, Loader2, Search, X, Package, ChevronDown, ChevronUp, UserPlus, Check, Printer, FileText, List } from 'lucide-react';
+     6→import { Button } from '@/components/ui/button';
+     7→import { Input } from '@/components/ui/input';
+     8→import { Label } from '@/components/ui/label';
+     9→import { Badge } from '@/components/ui/badge';
+    10→import { Skeleton } from '@/components/ui/skeleton';
+    11→import {
+    12→  Select,
+    13→  SelectContent,
+    14→  SelectItem,
+    15→  SelectTrigger,
+    16→  SelectValue,
+    17→} from '@/components/ui/select';
+    18→import {
+    19→  Dialog,
+    20→  DialogContent,
+    21→  DialogHeader,
+    22→  DialogTitle,
+    23→  DialogFooter,
+    24→} from '@/components/ui/dialog';
+    25→import {
+    26→  Table,
+    27→  TableBody,
+    28→  TableCell,
+    29→  TableHead,
+    30→  TableHeader,
+    31→  TableRow,
+    32→} from '@/components/ui/table';
+    33→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+    34→
+    35→interface Client {
+    36→  id: string;
+    37→  name: string;
+    38→}
+    39→
+    40→interface Vehicle {
+    41→  id: string;
+    42→  registration: string;
+    43→  driverName: string;
+    44→  ownerName: string;
+    45→}
+    46→
+    47→interface OrderItem {
+    48→  id?: string;
+    49→  clientId: string;
+    50→  clientName: string;
+    51→  packageCount: number;
+    52→  price: number;
+    53→  description: string;
+    54→  client?: Client;
+    55→}
+    56→
+    57→interface Shipment {
+    58→  id: string;
+    59→  number: number;
+    60→  date: string;
+    61→  status: string;
+    62→  description: string | null;
+    63→  vehicle: Vehicle;
+    64→  orders: (OrderItem & { id: string; client: Client })[];
+    65→}
+    66→
+    67→interface ShipmentFormData {
+    68→  date: string;
+    69→  vehicleId: string;
+    70→  description: string;
+    71→  status: string;
+    72→  orders: OrderItem[];
+    73→}
+    74→
+    75→const STATUS_OPTIONS = [
+    76→  { value: 'الكل', label: 'الكل' },
+    77→  { value: 'تم التسليم', label: 'تم التسليم' },
+    78→  { value: 'قيد التوصيل', label: 'قيد التوصيل' },
+    79→  { value: 'ملغاة', label: 'ملغاة' },
+    80→];
+    81→
+    82→const STATUS_FORM_OPTIONS = [
+    83→  { value: 'قيد التوصيل', label: 'قيد التوصيل' },
+    84→  { value: 'تم التسليم', label: 'تم التسليم' },
+    85→  { value: 'ملغاة', label: 'ملغاة' },
+    86→];
+    87→
+    88→const emptyOrder: OrderItem = {
+    89→  clientId: '',
+    90→  clientName: '',
+    91→  packageCount: 0,
+    92→  price: 0,
+    93→  description: '',
+    94→};
+    95→
+    96→const emptyForm: ShipmentFormData = {
+    97→  date: '',
+    98→  vehicleId: '',
+    99→  description: '',
+   100→  status: 'قيد التوصيل',
+   101→  orders: [{ ...emptyOrder }],
+   102→};
+   103→
+   104→function formatDate(dateStr: string): string {
+   105→  const d = new Date(dateStr);
+   106→  const y = d.getFullYear();
+   107→  const m = String(d.getMonth() + 1).padStart(2, '0');
+   108→  const day = String(d.getDate()).padStart(2, '0');
+   109→  return `${y}/${m}/${day}`;
+   110→}
+   111→
+   112→function formatDateInput(dateStr: string): string {
+   113→  const d = new Date(dateStr);
+   114→  const y = d.getFullYear();
+   115→  const m = String(d.getMonth() + 1).padStart(2, '0');
+   116→  const day = String(d.getDate()).padStart(2, '0');
+   117→  return `${y}-${m}-${day}`;
+   118→}
+   119→
+   120→function getStatusBadge(status: string) {
+   121→  switch (status) {
+   122→    case 'تم التسليم':
+   123→      return (
+   124→        <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-0">
+   125→          تم التسليم
+   126→        </Badge>
+   127→      );
+   128→    case 'قيد التوصيل':
+   129→      return (
+   130→        <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-0">
+   131→          قيد التوصيل
+   132→        </Badge>
+   133→      );
+   134→    case 'ملغاة':
+   135→      return (
+   136→        <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-0">
+   137→          ملغاة
+   138→        </Badge>
+   139→      );
+   140→    default:
+   141→      return <Badge variant="secondary">{status}</Badge>;
+   142→  }
+   143→}
+   144→
+   145→// ========== Client Autocomplete Input ==========
+   146→function ClientAutocomplete({
+   147→  value,
+   148→  onChange,
+   149→  clients,
+   150→}: {
+   151→  value: string;
+   152→  onChange: (clientId: string, clientName: string) => void;
+   153→  clients: Client[];
+   154→}) {
+   155→  const [inputValue, setInputValue] = useState(value);
+   156→  const [isOpen, setIsOpen] = useState(false);
+   157→  const [highlightIndex, setHighlightIndex] = useState(-1);
+   158→  const wrapperRef = useRef<HTMLDivElement>(null);
+   159→  const inputRef = useRef<HTMLInputElement>(null);
+   160→
+   161→  useEffect(() => {
+   162→    setInputValue(value);
+   163→  }, [value]);
+   164→
+   165→  useEffect(() => {
+   166→    function handleClickOutside(e: MouseEvent) {
+   167→      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+   168→        setIsOpen(false);
+   169→      }
+   170→    }
+   171→    document.addEventListener('mousedown', handleClickOutside);
+   172→    return () => document.removeEventListener('mousedown', handleClickOutside);
+   173→  }, []);
+   174→
+   175→  const filteredClients = inputValue.trim()
+   176→    ? clients.filter((c) =>
+   177→        c.name.toLowerCase().includes(inputValue.trim().toLowerCase())
+   178→      )
+   179→    : clients;
+   180→
+   181→  const shownClients = filteredClients.slice(0, 8);
+   182→
+   183→  const exactMatch = clients.find(
+   184→    (c) => c.name.toLowerCase() === inputValue.trim().toLowerCase()
+   185→  );
+   186→
+   187→  const isNewClient = inputValue.trim().length > 0 && !exactMatch;
+   188→
+   189→  function handleSelect(client: Client) {
+   190→    setInputValue(client.name);
+   191→    onChange(client.id, client.name);
+   192→    setIsOpen(false);
+   193→    setHighlightIndex(-1);
+   194→  }
+   195→
+   196→  function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+   197→    const val = e.target.value;
+   198→    setInputValue(val);
+   199→    onChange('', val);
+   200→    setIsOpen(true);
+   201→    setHighlightIndex(-1);
+   202→  }
+   203→
+   204→  function handleAddNew() {
+   205→    if (!inputValue.trim()) return;
+   206→    onChange('', inputValue.trim());
+   207→    setIsOpen(false);
+   208→  }
+   209→
+   210→  function handleKeyDown(e: React.KeyboardEvent) {
+   211→    const totalItems = shownClients.length + (isNewClient ? 1 : 0);
+   212→
+   213→    if (e.key === 'ArrowDown') {
+   214→      e.preventDefault();
+   215→      setHighlightIndex((prev) => (prev < totalItems - 1 ? prev + 1 : 0));
+   216→    } else if (e.key === 'ArrowUp') {
+   217→      e.preventDefault();
+   218→      setHighlightIndex((prev) => (prev > 0 ? prev - 1 : totalItems - 1));
+   219→    } else if (e.key === 'Enter') {
+   220→      e.preventDefault();
+   221→      if (highlightIndex >= 0 && highlightIndex < shownClients.length) {
+   222→        handleSelect(shownClients[highlightIndex]);
+   223→      } else if (highlightIndex === shownClients.length && isNewClient) {
+   224→        handleAddNew();
+   225→      }
+   226→    } else if (e.key === 'Escape') {
+   227→      setIsOpen(false);
+   228→    } else if (e.key === 'Tab') {
+   229→      if (shownClients.length === 1 && !isNewClient) {
+   230→        e.preventDefault();
+   231→        handleSelect(shownClients[0]);
+   232→      } else if (exactMatch) {
+   233→        e.preventDefault();
+   234→        handleSelect(exactMatch);
+   235→      }
+   236→    }
+   237→  }
+   238→
+   239→  return (
+   240→    <div ref={wrapperRef} className="relative">
+   241→      <div className="relative">
+   242→        <Input
+   243→          ref={inputRef}
+   244→          type="text"
+   245→          value={inputValue}
+   246→          onChange={handleInputChange}
+   247→          onFocus={() => setIsOpen(true)}
+   248→          onKeyDown={handleKeyDown}
+   249→          placeholder="اكتب اسم الزبون..."
+   250→          className="w-full pr-8"
+   251→          autoComplete="off"
+   252→        />
+   253→        {inputValue && (
+   254→          <button
+   255→            type="button"
+   256→            onClick={() => {
+   257→              setInputValue('');
+   258→              onChange('', '');
+   259→              inputRef.current?.focus();
+   260→            }}
+   261→            className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+   262→          >
+   263→            <X className="size-3.5" />
+   264→          </button>
+   265→        )}
+   266→      </div>
+   267→
+   268→      {isOpen && (shownClients.length > 0 || isNewClient) && (
+   269→        <div className="absolute z-50 top-full mt-1 w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+   270→          {shownClients.map((client, idx) => (
+   271→            <button
+   272→              key={client.id}
+   273→              type="button"
+   274→              onClick={() => handleSelect(client)}
+   275→              onMouseEnter={() => setHighlightIndex(idx)}
+   276→              className={`
+   277→                w-full text-right px-3 py-2 text-sm flex items-center gap-2 transition-colors
+   278→                ${idx === highlightIndex
+   279→                  ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-900 dark:text-amber-100'
+   280→                  : 'hover:bg-gray-50 dark:hover:bg-gray-800'
+   281→                }
+   282→              `}
+   283→            >
+   284→              <span className="truncate flex-1">{client.name}</span>
+   285→              {exactMatch?.id === client.id && (
+   286→                <Check className="size-3.5 text-emerald-500 shrink-0" />
+   287→              )}
+   288→            </button>
+   289→          ))}
+   290→          {isNewClient && (
+   291→            <button
+   292→              type="button"
+   293→              onClick={handleAddNew}
+   294→              onMouseEnter={() => setHighlightIndex(shownClients.length)}
+   295→              className={`
+   296→                w-full text-right px-3 py-2 text-sm flex items-center gap-2 border-t border-gray-100 dark:border-gray-800 transition-colors
+   297→                ${highlightIndex === shownClients.length
+   298→                  ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300'
+   299→                  : 'hover:bg-gray-50 dark:hover:bg-gray-800 text-emerald-600 dark:text-emerald-400'
+   300→                }
+   301→              `}
+   302→            >
+   303→              <UserPlus className="size-3.5 shrink-0" />
+   304→              <span>إضافة "{inputValue.trim()}" كزبون جديد</span>
+   305→            </button>
+   306→          )}
+   307→        </div>
+   308→      )}
+   309→
+   310→      {!exactMatch && inputValue.trim() && (
+   311→        <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1">
+   312→          <UserPlus className="size-3" />
+   313→          سيتم إضافة "{inputValue.trim()}" إلى لائحة الزبائن
+   314→        </p>
+   315→      )}
+   316→    </div>
+   317→  );
+   318→}
+   319→
+   320→// ========== Print Styles for Shipment ==========
+   321→function ShipmentPrintView({
+   322→  shipment,
+   323→  mode,
+   324→}: {
+   325→  shipment: Shipment;
+   326→  mode: 'detailed' | 'summary';
+   327→}) {
+   328→  const totalPackages = shipment.orders.reduce((sum, o) => sum + o.packageCount, 0);
+   329→  const totalRevenue = shipment.orders.reduce((sum, o) => sum + (o.price || 0), 0);
+   330→  const ordersWithPrice = shipment.orders.filter((o) => o.price && o.price > 0);
+   331→
+   332→  return (
+   333→    <div
+   334→      id={`shipment-print-${shipment.id}`}
+   335→      className="print-only-area"
+   336→      dir="rtl"
+   337→    >
+   338→      <div style={{ maxWidth: '700px', margin: '0 auto', padding: '20px', fontFamily: 'Arial, sans-serif' }}>
+   339→        {/* Company Header */}
+   340→        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+   341→          <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: '#1a1a1a', letterSpacing: '2px' }}>
+   342→            شركة عباد للنقل
+   343→          </h1>
+   344→          <div style={{ width: '120px', height: '2px', backgroundColor: '#333', margin: '8px auto' }} />
+   345→        </div>
+   346→
+   347→        {/* Title */}
+   348→        <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+   349→          <h2 style={{ fontSize: '20px', fontWeight: 'bold', color: '#333', textDecoration: 'underline', textDecorationOffset: '4px' }}>
+   350→            {mode === 'detailed' ? 'بيان الشحنة التفصيلي' : 'بيان الشحنة - الحصيلة الكلية'}
+   351→          </h2>
+   352→        </div>
+   353→
+   354→        {/* Shipment Info */}
+   355→        <div style={{ marginBottom: '20px', fontSize: '16px', lineHeight: '2' }}>
+   356→          <div style={{ display: 'flex', gap: '16px' }}>
+   357→            <span style={{ fontWeight: 'bold', color: '#555', minWidth: '140px' }}>رقم الشحنة:</span>
+   358→            <span style={{ fontWeight: 'bold', color: '#000' }}>{shipment.number}</span>
+   359→          </div>
+   360→          <div style={{ display: 'flex', gap: '16px' }}>
+   361→            <span style={{ fontWeight: 'bold', color: '#555', minWidth: '140px' }}>التاريخ:</span>
+   362→            <span>{formatDate(shipment.date)}</span>
+   363→          </div>
+   364→          <div style={{ display: 'flex', gap: '16px' }}>
+   365→            <span style={{ fontWeight: 'bold', color: '#555', minWidth: '140px' }}>المركبة:</span>
+   366→            <span>{shipment.vehicle.registration}</span>
+   367→          </div>
+   368→          <div style={{ display: 'flex', gap: '16px' }}>
+   369→            <span style={{ fontWeight: 'bold', color: '#555', minWidth: '140px' }}>السائق:</span>
+   370→            <span>{shipment.vehicle.driverName}</span>
+   371→          </div>
+   372→          <div style={{ display: 'flex', gap: '16px' }}>
+   373→            <span style={{ fontWeight: 'bold', color: '#555', minWidth: '140px' }}>الصاحب:</span>
+   374→            <span>{shipment.vehicle.ownerName}</span>
+   375→          </div>
+   376→          {shipment.description && (
+   377→            <div style={{ display: 'flex', gap: '16px' }}>
+   378→              <span style={{ fontWeight: 'bold', color: '#555', minWidth: '140px' }}>الوصف:</span>
+   379→              <span>{shipment.description}</span>
+   380→            </div>
+   381→          )}
+   382→          <div style={{ display: 'flex', gap: '16px' }}>
+   383→            <span style={{ fontWeight: 'bold', color: '#555', minWidth: '140px' }}>الحالة:</span>
+   384→            <span>{shipment.status}</span>
+   385→          </div>
+   386→        </div>
+   387→
+   388→        {mode === 'detailed' ? (
+   389→          /* ========= DETAILED MODE ========= */
+   390→          <div>
+   391→            {/* Orders Table */}
+   392→            <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '16px', fontSize: '14px' }}>
+   393→              <thead>
+   394→                <tr style={{ backgroundColor: '#f5f5f5', borderBottom: '2px solid #333' }}>
+   395→                  <th style={{ padding: '10px 8px', textAlign: 'right', border: '1px solid #ccc' }}>الرقم</th>
+   396→                  <th style={{ padding: '10px 8px', textAlign: 'right', border: '1px solid #ccc' }}>اسم الزبون</th>
+   397→                  <th style={{ padding: '10px 8px', textAlign: 'center', border: '1px solid #ccc' }}>عدد الطرود</th>
+   398→                  <th style={{ padding: '10px 8px', textAlign: 'center', border: '1px solid #ccc' }}>السعر (د.م.)</th>
+   399→                  <th style={{ padding: '10px 8px', textAlign: 'right', border: '1px solid #ccc' }}>الوصف</th>
+   400→                </tr>
+   401→              </thead>
+   402→              <tbody>
+   403→                {shipment.orders.map((order, idx) => (
+   404→                  <tr key={order.id} style={{ borderBottom: '1px solid #ddd' }}>
+   405→                    <td style={{ padding: '8px', border: '1px solid #eee', textAlign: 'center' }}>{idx + 1}</td>
+   406→                    <td style={{ padding: '8px', border: '1px solid #eee', fontWeight: '500' }}>{order.client.name}</td>
+   407→                    <td style={{ padding: '8px', border: '1px solid #eee', textAlign: 'center', fontWeight: 'bold' }}>{order.packageCount}</td>
+   408→                    <td style={{ padding: '8px', border: '1px solid #eee', textAlign: 'center' }}>{order.price ? order.price.toFixed(2) : '---'}</td>
+   409→                    <td style={{ padding: '8px', border: '1px solid #eee', color: '#666' }}>{order.description || '---'}</td>
+   410→                  </tr>
+   411→                ))}
+   412→              </tbody>
+   413→            </table>
+   414→
+   415→            {/* Totals */}
+   416→            <div style={{ marginTop: '12px', padding: '12px', backgroundColor: '#fafafa', borderRadius: '8px', border: '1px solid #ddd', fontSize: '15px' }}>
+   417→              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+   418→                <span style={{ fontWeight: 'bold', color: '#555' }}>إجمالي الطلبيات:</span>
+   419→                <span style={{ fontWeight: 'bold' }}>{shipment.orders.length}</span>
+   420→              </div>
+   421→              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+   422→                <span style={{ fontWeight: 'bold', color: '#555' }}>إجمالي الطرود:</span>
+   423→                <span style={{ fontWeight: 'bold', fontSize: '18px', color: '#000' }}>{totalPackages}</span>
+   424→              </div>
+   425→              {ordersWithPrice.length > 0 && (
+   426→                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+   427→                  <span style={{ fontWeight: 'bold', color: '#555' }}>إجمالي الأسعار:</span>
+   428→                  <span style={{ fontWeight: 'bold', fontSize: '18px', color: '#16a34a' }}>{totalRevenue.toFixed(2)} د.م.</span>
+   429→                </div>
+   430→              )}
+   431→              <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #ccc', fontSize: '13px', color: '#888' }}>
+   432→                ({ordersWithPrice.length} من {shipment.orders.length} طلبيات لها سعر مسجل)
+   433→              </div>
+   434→            </div>
+   435→          </div>
+   436→        ) : (
+   437→          /* ========= SUMMARY MODE ========= */
+   438→          <div>
+   439→            <div style={{ padding: '20px', backgroundColor: '#fafafa', borderRadius: '8px', border: '2px solid #333', fontSize: '18px' }}>
+   440→              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+   441→                <span style={{ fontWeight: 'bold', color: '#555', fontSize: '16px' }}>عدد الطلبيات:</span>
+   442→                <span style={{ fontWeight: 'bold', fontSize: '20px' }}>{shipment.orders.length}</span>
+   443→              </div>
+   444→              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+   445→                <span style={{ fontWeight: 'bold', color: '#555', fontSize: '16px' }}>إجمالي الطرود:</span>
+   446→                <span style={{ fontWeight: 'bold', fontSize: '24px', color: '#000' }}>{totalPackages} طرود</span>
+   447→              </div>
+   448→              {ordersWithPrice.length > 0 && (
+   449→                <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '12px', borderTop: '2px solid #333' }}>
+   450→                  <span style={{ fontWeight: 'bold', color: '#555', fontSize: '16px' }}>الحصيلة الكلية:</span>
+   451→                  <span style={{ fontWeight: 'bold', fontSize: '24px', color: '#16a34a' }}>{totalRevenue.toFixed(2)} د.م.</span>
+   452→                </div>
+   453→              )}
+   454→            </div>
+   455→          </div>
+   456→        )}
+   457→
+   458→        {/* Signature Lines */}
+   459→        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '48px', marginTop: '60px' }}>
+   460→          <div style={{ textAlign: 'center' }}>
+   461→            <p style={{ fontWeight: 'bold', color: '#555', marginBottom: '12px' }}>توقيع المسير</p>
+   462→            <div style={{ borderBottom: '2px solid #333', paddingBottom: '4px' }}>&nbsp;</div>
+   463→          </div>
+   464→          <div style={{ textAlign: 'center' }}>
+   465→            <p style={{ fontWeight: 'bold', color: '#555', marginBottom: '12px' }}>توقيع السائق</p>
+   466→            <div style={{ borderBottom: '2px solid #333', paddingBottom: '4px' }}>&nbsp;</div>
+   467→          </div>
+   468→        </div>
+   469→      </div>
+   470→    </div>
+   471→  );
+   472→}
+   473→
+   474→// ========== Main Component ==========
+   475→export default function ShipmentsManager() {
+   476→  const [shipments, setShipments] = useState<Shipment[]>([]);
+   477→  const [loading, setLoading] = useState(true);
+   478→  const [dialogOpen, setDialogOpen] = useState(false);
+   479→  const [editingShipment, setEditingShipment] = useState<Shipment | null>(null);
+   480→  const [form, setForm] = useState<ShipmentFormData>(emptyForm);
+   481→  const [submitting, setSubmitting] = useState(false);
+   482→  const [deletingId, setDeletingId] = useState<string | null>(null);
+   483→  const [expandedShipment, setExpandedShipment] = useState<string | null>(null);
+   484→
+   485→  // Print state
+   486→  const [printShipment, setPrintShipment] = useState<Shipment | null>(null);
+   487→  const [printMode, setPrintMode] = useState<'detailed' | 'summary'>('detailed');
+   488→  const [printDialogOpen, setPrintDialogOpen] = useState(false);
+   489→
+   490→  // Reference data
+   491→  const [clients, setClients] = useState<Client[]>([]);
+   492→  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+   493→
+   494→  // Filter state
+   495→  const [filterDate, setFilterDate] = useState('');
+   496→  const [filterStatus, setFilterStatus] = useState('الكل');
+   497→  const [filterVehicleId, setFilterVehicleId] = useState('');
+   498→
+   499→  const fetchShipments = useCallback(async () => {
+   500→    try {
+   501→      setLoading(true);
+   502→      const params = new URLSearchParams();
+   503→      if (filterDate) params.set('date', filterDate);
+   504→      if (filterStatus && filterStatus !== 'الكل') params.set('status', filterStatus);
+   505→      if (filterVehicleId && filterVehicleId !== 'all') params.set('vehicleId', filterVehicleId);
+   506→
+   507→      const res = await fetch(`/api/shipments?${params.toString()}`);
+   508→      if (!res.ok) throw new Error('فشل في تحميل الشحنات');
+   509→      const json = await res.json();
+   510→      setShipments(Array.isArray(json) ? json : json.data ?? []);
+   511→    } catch (err) {
+   512→      toast.error(
+   513→        err instanceof Error ? err.message : 'حدث خطأ أثناء تحميل الشحنات'
+   514→      );
+   515→    } finally {
+   516→      setLoading(false);
+   517→    }
+   518→  }, [filterDate, filterStatus, filterVehicleId]);
+   519→
+   520→  const fetchClients = useCallback(async () => {
+   521→    try {
+   522→      const res = await fetch('/api/clients');
+   523→      if (!res.ok) return;
+   524→      const json = await res.json();
+   525→      setClients(Array.isArray(json) ? json : json.data ?? []);
+   526→    } catch {
+   527→      // silently fail
+   528→    }
+   529→  }, []);
+   530→
+   531→  const fetchVehicles = useCallback(async () => {
+   532→    try {
+   533→      const res = await fetch('/api/vehicles');
+   534→      if (!res.ok) return;
+   535→      const json = await res.json();
+   536→      setVehicles(Array.isArray(json) ? json : json.data ?? []);
+   537→    } catch {
+   538→      // silently fail
+   539→    }
+   540→  }, []);
+   541→
+   542→  useEffect(() => {
+   543→    fetchShipments();
+   544→  }, [fetchShipments]);
+   545→
+   546→  useEffect(() => {
+   547→    fetchClients();
+   548→    fetchVehicles();
+   549→  }, [fetchClients, fetchVehicles]);
+   550→
+   551→  function openCreateDialog() {
+   552→    setEditingShipment(null);
+   553→    setForm(emptyForm);
+   554→    setDialogOpen(true);
+   555→  }
+   556→
+   557→  function openEditDialog(shipment: Shipment) {
+   558→    setEditingShipment(shipment);
+   559→    setForm({
+   560→      date: formatDateInput(shipment.date),
+   561→      vehicleId: shipment.vehicle.id,
+   562→      description: shipment.description ?? '',
+   563→      status: shipment.status,
+   564→      orders: shipment.orders.map((o) => ({
+   565→        id: o.id,
+   566→        clientId: o.client.id,
+   567→        clientName: o.client.name,
+   568→        packageCount: o.packageCount,
+   569→        price: (o as Record<string, unknown>).price as number || 0,
+   570→        description: o.description ?? '',
+   571→      })),
+   572→    });
+   573→    setDialogOpen(true);
+   574→  }
+   575→
+   576→  // Order management within the form
+   577→  function addOrder() {
+   578→    setForm({ ...form, orders: [...form.orders, { ...emptyOrder }] });
+   579→  }
+   580→
+   581→  function removeOrder(index: number) {
+   582→    if (form.orders.length <= 1) {
+   583→      toast.error('يجب أن تحتوي الشحنة على طلبية واحدة على الأقل');
+   584→      return;
+   585→    }
+   586→    const newOrders = form.orders.filter((_, i) => i !== index);
+   587→    setForm({ ...form, orders: newOrders });
+   588→  }
+   589→
+   590→  function updateOrderClient(index: number, clientId: string, clientName: string) {
+   591→    const newOrders = [...form.orders];
+   592→    newOrders[index] = { ...newOrders[index], clientId, clientName };
+   593→    setForm({ ...form, orders: newOrders });
+   594→  }
+   595→
+   596→  function updateOrderField(index: number, field: 'packageCount' | 'price' | 'description', value: string | number) {
+   597→    const newOrders = [...form.orders];
+   598→    (newOrders[index] as Record<string, unknown>)[field] = value;
+   599→    setForm({ ...form, orders: newOrders });
+   600→  }
+   601→
+   602→  // Ensure a client exists (find or create), returns the client ID
+   603→  async function ensureClient(name: string): Promise<string | null> {
+   604→    try {
+   605→      const res = await fetch('/api/clients/ensure', {
+   606→        method: 'POST',
+   607→        headers: { 'Content-Type': 'application/json' },
+   608→        body: JSON.stringify({ name }),
+   609→      });
+   610→      if (!res.ok) return null;
+   611→      const json = await res.json();
+   612→      if (json.created) {
+   613→        fetchClients();
+   614→      }
+   615→      return json.data.id;
+   616→    } catch {
+   617→      return null;
+   618→    }
+   619→  }
+   620→
+   621→  async function handleSubmit(e: React.FormEvent) {
+   622→    e.preventDefault();
+   623→    if (!form.date) {
+   624→      toast.error('التاريخ مطلوب');
+   625→      return;
+   626→    }
+   627→    if (!form.vehicleId) {
+   628→      toast.error('المركبة مطلوبة');
+   629→      return;
+   630→    }
+   631→
+   632→    // Validate orders - each must have a client name and package count
+   633→    const validOrders = form.orders.filter(
+   634→      (o) => o.clientName.trim() && o.packageCount > 0
+   635→    );
+   636→    if (validOrders.length === 0) {
+   637→      toast.error('يجب إضافة طلبية واحدة صالحة على الأقل (اسم الزبون وعدد الطرود)');
+   638→      return;
+   639→    }
+   640→
+   641→    try {
+   642→      setSubmitting(true);
+   643→
+   644→      // Step 1: Ensure all clients exist
+   645→      const resolvedOrders = await Promise.all(
+   646→        validOrders.map(async (o) => {
+   647→          let clientId = o.clientId;
+   648→          if (!clientId) {
+   649→            clientId = (await ensureClient(o.clientName.trim())) || '';
+   650→          }
+   651→          return {
+   652→            clientId,
+   653→            packageCount: o.packageCount,
+   654→            price: o.price > 0 ? o.price : undefined,
+   655→            description: o.description?.trim() || undefined,
+   656→          };
+   657→        })
+   658→      );
+   659→
+   660→      const unresolved = resolvedOrders.find((o) => !o.clientId);
+   661→      if (unresolved) {
+   662→        throw new Error('فشل في تسجيل أحد الزبائن');
+   663→      }
+   664→
+   665→      // Step 2: Create/update the shipment
+   666→      const body = {
+   667→        date: form.date,
+   668→        vehicleId: form.vehicleId,
+   669→        description: form.description.trim() || undefined,
+   670→        status: form.status,
+   671→        orders: resolvedOrders,
+   672→      };
+   673→
+   674→      if (editingShipment) {
+   675→        const res = await fetch(`/api/shipments/${editingShipment.id}`, {
+   676→          method: 'PUT',
+   677→          headers: { 'Content-Type': 'application/json' },
+   678→          body: JSON.stringify(body),
+   679→        });
+   680→        if (!res.ok) throw new Error('فشل في تحديث الشحنة');
+   681→        toast.success('تم تحديث الشحنة بنجاح');
+   682→      } else {
+   683→        const res = await fetch('/api/shipments', {
+   684→          method: 'POST',
+   685→          headers: { 'Content-Type': 'application/json' },
+   686→          body: JSON.stringify(body),
+   687→        });
+   688→        if (!res.ok) throw new Error('فشل في إضافة الشحنة');
+   689→        toast.success('تم إضافة الشحنة بنجاح');
+   690→      }
+   691→
+   692→      setDialogOpen(false);
+   693→      fetchShipments();
+   694→    } catch (err) {
+   695→      toast.error(err instanceof Error ? err.message : 'حدث خطأ غير متوقع');
+   696→    } finally {
+   697→      setSubmitting(false);
+   698→    }
+   699→  }
+   700→
+   701→  async function handleDelete(id: string) {
+   702→    try {
+   703→      setDeletingId(id);
+   704→      const res = await fetch(`/api/shipments/${id}`, { method: 'DELETE' });
+   705→      if (!res.ok) throw new Error('فشل في حذف الشحنة');
+   706→      toast.success('تم حذف الشحنة بنجاح');
+   707→      fetchShipments();
+   708→    } catch (err) {
+   709→      toast.error(err instanceof Error ? err.message : 'حدث خطأ أثناء الحذف');
+   710→    } finally {
+   711→      setDeletingId(null);
+   712→    }
+   713→  }
+   714→
+   715→  function handleClearFilters() {
+   716→    setFilterDate('');
+   717→    setFilterStatus('الكل');
+   718→    setFilterVehicleId('');
+   719→  }
+   720→
+   721→  function handleSearch() {
+   722→    fetchShipments();
+   723→  }
+   724→
+   725→  function getTotalPackages(shipment: Shipment): number {
+   726→    return shipment.orders.reduce((sum, o) => sum + o.packageCount, 0);
+   727→  }
+   728→
+   729→  function getTotalRevenue(shipment: Shipment): number {
+   730→    return shipment.orders.reduce((sum, o) => sum + ((o as Record<string, unknown>).price as number || 0), 0);
+   731→  }
+   732→
+   733→  function openPrintDialog(shipment: Shipment) {
+   734→    setPrintShipment(shipment);
+   735→    setPrintDialogOpen(true);
+   736→  }
+   737→
+   738→  function handlePrint(mode: 'detailed' | 'summary') {
+   739→    setPrintMode(mode);
+   740→    setPrintDialogOpen(false);
+   741→    // Small delay to let React render the print view, then print
+   742→    setTimeout(() => {
+   743→      window.print();
+   744→    }, 200);
+   745→  }
+   746→
+   747→  return (
+   748→    <div className="space-y-6">
+   749→      {/* Filter Bar */}
+   750→      <Card className="bg-white dark:bg-gray-900 border shadow-sm no-print">
+   751→        <CardContent className="p-4">
+   752→          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+   753→            <div className="space-y-2">
+   754→              <Label htmlFor="filter-date" className="text-sm">التاريخ</Label>
+   755→              <Input
+   756→                id="filter-date"
+   757→                type="date"
+   758→                value={filterDate}
+   759→                onChange={(e) => setFilterDate(e.target.value)}
+   760→                className="w-full"
+   761→              />
+   762→            </div>
+   763→            <div className="space-y-2">
+   764→              <Label className="text-sm">الحالة</Label>
+   765→              <Select value={filterStatus} onValueChange={setFilterStatus}>
+   766→                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+   767→                <SelectContent>
+   768→                  {STATUS_OPTIONS.map((opt) => (
+   769→                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+   770→                  ))}
+   771→                </SelectContent>
+   772→              </Select>
+   773→            </div>
+   774→            <div className="space-y-2">
+   775→              <Label className="text-sm">المركبة</Label>
+   776→              <Select value={filterVehicleId || 'all'} onValueChange={(v) => setFilterVehicleId(v === 'all' ? '' : v)}>
+   777→                <SelectTrigger className="w-full"><SelectValue placeholder="الكل" /></SelectTrigger>
+   778→                <SelectContent>
+   779→                  <SelectItem value="all">الكل</SelectItem>
+   780→                  {vehicles.map((v) => (
+   781→                    <SelectItem key={v.id} value={v.id}>
+   782→                      {v.registration} - {v.driverName}
+   783→                    </SelectItem>
+   784→                  ))}
+   785→                </SelectContent>
+   786→              </Select>
+   787→            </div>
+   788→            <div className="flex items-end gap-2">
+   789→              <Button onClick={handleSearch} className="bg-amber-500 hover:bg-amber-600 text-white flex-1">
+   790→                <Search className="size-4" />
+   791→                بحث
+   792→              </Button>
+   793→              <Button variant="outline" onClick={handleClearFilters} className="flex-1">
+   794→                <X className="size-4" />
+   795→                مسح
+   796→              </Button>
+   797→            </div>
+   798→          </div>
+   799→        </CardContent>
+   800→      </Card>
+   801→
+   802→      {/* Header with Add Button */}
+   803→      <div className="flex items-center justify-between no-print">
+   804→        <Button onClick={openCreateDialog} className="bg-amber-500 hover:bg-amber-600 text-white">
+   805→          <Plus className="size-4" />
+   806→          إضافة شحنة
+   807→        </Button>
+   808→      </div>
+   809→
+   810→      {/* Shipments Table */}
+   811→      <Card className="bg-white dark:bg-gray-900 border shadow-sm">
+   812→        <CardHeader className="p-4 pb-0">
+   813→          <CardTitle className="text-lg">الشحنات</CardTitle>
+   814→        </CardHeader>
+   815→        <CardContent className="p-0">
+   816→          {loading ? (
+   817→            <div className="p-6 space-y-3">
+   818→              {Array.from({ length: 5 }).map((_, i) => (
+   819→                <Skeleton key={i} className="h-10 w-full" />
+   820→              ))}
+   821→            </div>
+   822→          ) : shipments.length > 0 ? (
+   823→            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+   824→              <Table>
+   825→                <TableHeader>
+   826→                  <TableRow>
+   827→                    <TableHead>رقم الشحنة</TableHead>
+   828→                    <TableHead>التاريخ</TableHead>
+   829→                    <TableHead>المركبة</TableHead>
+   830→                    <TableHead>الصاحب</TableHead>
+   831→                    <TableHead>عدد الطلبيات</TableHead>
+   832→                    <TableHead>إجمالي الطرود</TableHead>
+   833→                    <TableHead>الحصيلة</TableHead>
+   834→                    <TableHead>الحالة</TableHead>
+   835→                    <TableHead>الإجراءات</TableHead>
+   836→                  </TableRow>
+   837→                </TableHeader>
+   838→                <TableBody>
+   839→                  {shipments.map((shipment) => {
+   840→                    const isExpanded = expandedShipment === shipment.id;
+   841→                    const totalPkgs = getTotalPackages(shipment);
+   842→                    const totalRev = getTotalRevenue(shipment);
+   843→                    return (
+   844→                      <>
+   845→                        <TableRow
+   846→                          key={shipment.id}
+   847→                          className="cursor-pointer hover:bg-amber-50/50 dark:hover:bg-amber-900/10 no-print"
+   848→                          onClick={() => setExpandedShipment(isExpanded ? null : shipment.id)}
+   849→                        >
+   850→                          <TableCell className="font-medium">{shipment.number}</TableCell>
+   851→                          <TableCell>{formatDate(shipment.date)}</TableCell>
+   852→                          <TableCell>{shipment.vehicle.registration}</TableCell>
+   853→                          <TableCell>
+   854→                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+   855→                              {shipment.vehicle.ownerName}
+   856→                            </span>
+   857→                          </TableCell>
+   858→                          <TableCell>
+   859→                            <div className="flex items-center gap-1">
+   860→                              <Package className="size-3.5 text-muted-foreground" />
+   861→                              <span className="font-semibold">{shipment.orders.length}</span>
+   862→                            </div>
+   863→                          </TableCell>
+   864→                          <TableCell className="font-bold text-lg">{totalPkgs}</TableCell>
+   865→                          <TableCell className="font-bold text-emerald-600 dark:text-emerald-400">
+   866→                            {totalRev > 0 ? `${totalRev.toFixed(0)} د.م.` : '---'}
+   867→                          </TableCell>
+   868→                          <TableCell>{getStatusBadge(shipment.status)}</TableCell>
+   869→                          <TableCell>
+   870→                            <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+   871→                              <Button
+   872→                                variant="ghost"
+   873→                                size="icon"
+   874→                                onClick={() => openEditDialog(shipment)}
+   875→                                className="text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+   876→                                title="تعديل"
+   877→                              >
+   878→                                <Pencil className="size-4" />
+   879→                              </Button>
+   880→                              <Button
+   881→                                variant="ghost"
+   882→                                size="icon"
+   883→                                onClick={() => openPrintDialog(shipment)}
+   884→                                className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+   885→                                title="طباعة"
+   886→                              >
+   887→                                <Printer className="size-4" />
+   888→                              </Button>
+   889→                              <Button
+   890→                                variant="ghost"
+   891→                                size="icon"
+   892→                                onClick={() => handleDelete(shipment.id)}
+   893→                                disabled={deletingId === shipment.id}
+   894→                                className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+   895→                                title="حذف"
+   896→                              >
+   897→                                {deletingId === shipment.id ? (
+   898→                                  <Loader2 className="size-4 animate-spin" />
+   899→                                ) : (
+   900→                                  <Trash2 className="size-4" />
+   901→                                )}
+   902→                              </Button>
+   903→                            </div>
+   904→                          </TableCell>
+   905→                        </TableRow>
+   906→                        {/* Expanded: show orders detail */}
+   907→                        {isExpanded && (
+   908→                          <TableRow key={`${shipment.id}-orders`} className="no-print">
+   909→                            <TableCell colSpan={9} className="bg-amber-50/30 dark:bg-amber-900/10 px-8 py-4">
+   910→                              <div className="space-y-2">
+   911→                                <p className="text-sm font-semibold text-amber-700 dark:text-amber-400 mb-2">
+   912→                                  تفاصيل الطلبيات ({shipment.orders.length})
+   913→                                </p>
+   914→                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+   915→                                  {shipment.orders.map((order, oi) => (
+   916→                                    <div
+   917→                                      key={order.id}
+   918→                                      className="border rounded-lg p-3 bg-white dark:bg-gray-800"
+   919→                                    >
+   920→                                      <div className="flex items-center justify-between mb-1">
+   921→                                        <span className="text-xs text-muted-foreground">طلبية {oi + 1}</span>
+   922→                                        <Badge variant="secondary" className="text-xs">
+   923→                                          {order.packageCount} طرود
+   924→                                        </Badge>
+   925→                                      </div>
+   926→                                      <p className="font-semibold text-sm">{order.client.name}</p>
+   927→                                      {(order as Record<string, unknown>).price as number > 0 && (
+   928→                                        <p className="text-sm text-emerald-600 dark:text-emerald-400 font-bold mt-1">
+   929→                                          {(order as Record<string, unknown>).price as number} د.م.
+   930→                                        </p>
+   931→                                      )}
+   932→                                      {order.description && (
+   933→                                        <p className="text-xs text-muted-foreground mt-1">{order.description}</p>
+   934→                                      )}
+   935→                                    </div>
+   936→                                  ))}
+   937→                                </div>
+   938→                              </div>
+   939→                            </TableCell>
+   940→                          </TableRow>
+   941→                        )}
+   942→                      </>
+   943→                    );
+   944→                  })}
+   945→                </TableBody>
+   946→              </Table>
+   947→            </div>
+   948→          ) : (
+   949→            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+   950→              <p className="text-base">لا توجد شحنات</p>
+   951→              <p className="text-sm mt-1">
+   952→                اضغط على &quot;إضافة شحنة&quot; لإضافة شحنة جديدة
+   953→              </p>
+   954→            </div>
+   955→          )}
+   956→        </CardContent>
+   957→      </Card>
+   958→
+   959→      {/* Create / Edit Dialog */}
+   960→      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+   961→        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+   962→          <DialogHeader>
+   963→            <DialogTitle>
+   964→              {editingShipment ? 'تعديل الشحنة' : 'إضافة شحنة جديدة'}
+   965→            </DialogTitle>
+   966→          </DialogHeader>
+   967→          <form onSubmit={handleSubmit} className="space-y-4">
+   968→            <div className="grid grid-cols-2 gap-4">
+   969→              <div className="space-y-2">
+   970→                <Label htmlFor="shipment-date">التاريخ <span className="text-red-500">*</span></Label>
+   971→                <Input
+   972→                  id="shipment-date"
+   973→                  type="date"
+   974→                  value={form.date}
+   975→                  onChange={(e) => setForm({ ...form, date: e.target.value })}
+   976→                  required
+   977→                />
+   978→              </div>
+   979→              <div className="space-y-2">
+   980→                <Label>المركبة <span className="text-red-500">*</span></Label>
+   981→                <Select
+   982→                  value={form.vehicleId}
+   983→                  onValueChange={(val) => setForm({ ...form, vehicleId: val })}
+   984→                >
+   985→                  <SelectTrigger className="w-full">
+   986→                    <SelectValue placeholder="اختر المركبة" />
+   987→                  </SelectTrigger>
+   988→                  <SelectContent>
+   989→                    {vehicles.map((v) => (
+   990→                      <SelectItem key={v.id} value={v.id}>
+   991→                        {v.registration} - {v.driverName} ({v.ownerName})
+   992→                      </SelectItem>
+   993→                    ))}
+   994→                  </SelectContent>
+   995→                </Select>
+   996→              </div>
+   997→            </div>
+   998→
+   999→            <div className="grid grid-cols-2 gap-4">
+  1000→              <div className="space-y-2">
+  1001→                <Label>حالة الشحنة</Label>
+  1002→                <Select
+  1003→                  value={form.status}
+  1004→                  onValueChange={(val) => setForm({ ...form, status: val })}
+  1005→                >
+  1006→                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+  1007→                  <SelectContent>
+  1008→                    {STATUS_FORM_OPTIONS.map((opt) => (
+  1009→                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+  1010→                    ))}
+  1011→                  </SelectContent>
+  1012→                </Select>
+  1013→              </div>
+  1014→              <div className="space-y-2">
+  1015→                <Label htmlFor="shipment-desc">وصف الشحنة</Label>
+  1016→                <Input
+  1017→                  id="shipment-desc"
+  1018→                  value={form.description}
+  1019→                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+  1020→                  placeholder="مثال: رحلة الدار البيضاء - الرباط"
+  1021→                />
+  1022→              </div>
+  1023→            </div>
+  1024→
+  1025→            {/* Orders Section */}
+  1026→            <div className="space-y-3">
+  1027→              <div className="flex items-center justify-between">
+  1028→                <Label className="text-base font-bold">الطلبيات <span className="text-red-500">*</span></Label>
+  1029→                <Button type="button" variant="outline" size="sm" onClick={addOrder}>
+  1030→                  <Plus className="size-3.5 ml-1" />
+  1031→                  إضافة طلبية
+  1032→                </Button>
+  1033→              </div>
+  1034→
+  1035→              {form.orders.map((order, index) => (
+  1036→                <div
+  1037→                  key={index}
+  1038→                  className="border rounded-lg p-3 space-y-3 bg-muted/30"
+  1039→                >
+  1040→                  <div className="flex items-center justify-between">
+  1041→                    <span className="text-sm font-semibold text-amber-700 dark:text-amber-400">
+  1042→                      طلبية {index + 1}
+  1043→                    </span>
+  1044→                    {form.orders.length > 1 && (
+  1045→                      <Button
+  1046→                        type="button"
+  1047→                        variant="ghost"
+  1048→                        size="icon"
+  1049→                        className="size-7 text-red-500 hover:text-red-700"
+  1050→                        onClick={() => removeOrder(index)}
+  1051→                      >
+  1052→                        <Trash2 className="size-3.5" />
+  1053→                      </Button>
+  1054→                    )}
+  1055→                  </div>
+  1056→                  <div className="space-y-1">
+  1057→                    <Label className="text-xs">اسم الزبون <span className="text-red-500">*</span></Label>
+  1058→                    <ClientAutocomplete
+  1059→                      value={order.clientName}
+  1060→                      onChange={(clientId, clientName) =>
+  1061→                        updateOrderClient(index, clientId, clientName)
+  1062→                      }
+  1063→                      clients={clients}
+  1064→                    />
+  1065→                  </div>
+  1066→                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+  1067→                    <div className="space-y-1">
+  1068→                      <Label className="text-xs">عدد الطرود <span className="text-red-500">*</span></Label>
+  1069→                      <Input
+  1070→                        type="number"
+  1071→                        min={1}
+  1072→                        value={order.packageCount || ''}
+  1073→                        onChange={(e) => updateOrderField(index, 'packageCount', parseInt(e.target.value) || 0)}
+  1074→                        placeholder="عدد الطرود"
+  1075→                      />
+  1076→                    </div>
+  1077→                    <div className="space-y-1">
+  1078→                      <Label className="text-xs">السعر (د.م.) <span className="text-muted-foreground">- اختياري</span></Label>
+  1079→                      <Input
+  1080→                        type="number"
+  1081→                        min={0}
+  1082→                        step={0.01}
+  1083→                        value={order.price || ''}
+  1084→                        onChange={(e) => updateOrderField(index, 'price', parseFloat(e.target.value) || 0)}
+  1085→                        placeholder="يُدخل لاحقاً"
+  1086→                      />
+  1087→                    </div>
+  1088→                    <div className="space-y-1">
+  1089→                      <Label className="text-xs">وصف (اختياري)</Label>
+  1090→                      <Input
+  1091→                        value={order.description}
+  1092→                        onChange={(e) => updateOrderField(index, 'description', e.target.value)}
+  1093→                        placeholder="وصف الطلبية"
+  1094→                      />
+  1095→                    </div>
+  1096→                  </div>
+  1097→                </div>
+  1098→              ))}
+  1099→            </div>
+  1100→
+  1101→            <DialogFooter>
+  1102→              <Button
+  1103→                type="button"
+  1104→                variant="outline"
+  1105→                onClick={() => setDialogOpen(false)}
+  1106→                disabled={submitting}
+  1107→              >
+  1108→                إلغاء
+  1109→              </Button>
+  1110→              <Button
+  1111→                type="submit"
+  1112→                disabled={submitting}
+  1113→                className="bg-amber-500 hover:bg-amber-600 text-white"
+  1114→              >
+  1115→                {submitting && <Loader2 className="size-4 animate-spin" />}
+  1116→                {editingShipment ? 'تحديث' : 'إضافة'}
+  1117→              </Button>
+  1118→            </DialogFooter>
+  1119→          </form>
+  1120→        </DialogContent>
+  1121→      </Dialog>
+  1122→
+  1123→      {/* Print Mode Selection Dialog */}
+  1124→      <Dialog open={printDialogOpen} onOpenChange={setPrintDialogOpen}>
+  1125→        <DialogContent className="sm:max-w-md">
+  1126→          <DialogHeader>
+  1127→            <DialogTitle>اختر نوع الطباعة</DialogTitle>
+  1128→          </DialogHeader>
+  1129→          <div className="space-y-3 py-4">
+  1130→            <button
+  1131→              type="button"
+  1132→              onClick={() => handlePrint('detailed')}
+  1133→              className="w-full border-2 border-gray-200 dark:border-gray-700 rounded-xl p-4 text-right hover:border-amber-400 hover:bg-amber-50/50 dark:hover:bg-amber-900/10 transition-all"
+  1134→            >
+  1135→              <div className="flex items-center gap-3">
+  1136→                <div className="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
+  1137→                  <FileText className="size-5 text-amber-600 dark:text-amber-400" />
+  1138→                </div>
+  1139→                <div>
+  1140→                  <p className="font-bold text-sm">طباعة تفصيلية</p>
+  1141→                  <p className="text-xs text-muted-foreground mt-0.5">
+  1142→                    طباعة الشحنة مع جميع تفاصيل البضائع والطلبيات وأسماء الزبائن والأسعار
+  1143→                  </p>
+  1144→                </div>
+  1145→              </div>
+  1146→            </button>
+  1147→            <button
+  1148→              type="button"
+  1149→              onClick={() => handlePrint('summary')}
+  1150→              className="w-full border-2 border-gray-200 dark:border-gray-700 rounded-xl p-4 text-right hover:border-blue-400 hover:bg-blue-50/50 dark:hover:bg-blue-900/10 transition-all"
+  1151→            >
+  1152→              <div className="flex items-center gap-3">
+  1153→                <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
+  1154→                  <List className="size-5 text-blue-600 dark:text-blue-400" />
+  1155→                </div>
+  1156→                <div>
+  1157→                  <p className="font-bold text-sm">طباعة الحصيلة الكلية</p>
+  1158→                  <p className="text-xs text-muted-foreground mt-0.5">
+  1159→                    طباعة الشحنة بإجمالي عدد الطرود والحصيلة المالية فقط بدون تفاصيل البضائع
+  1160→                  </p>
+  1161→                </div>
+  1162→              </div>
+  1163→            </button>
+  1164→          </div>
+  1165→        </DialogContent>
+  1166→      </Dialog>
+  1167→
+  1168→      {/* Print View (hidden, shown only during print) */}
+  1169→      {printShipment && (
+  1170→        <ShipmentPrintView shipment={printShipment} mode={printMode} />
+  1171→      )}
+  1172→    </div>
+  1173→  );
+  1174→}
