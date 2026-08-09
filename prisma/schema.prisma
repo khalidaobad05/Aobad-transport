@@ -58,6 +58,7 @@ model Shipment {
 model Order {
   id           String   @id @default(cuid())
   packageCount Int      @default(0)
+  price        Float?
   description  String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

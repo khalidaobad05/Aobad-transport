@@ -114,9 +114,10 @@ export async function POST(request: NextRequest) {
         description: description || null,
         vehicleId,
         orders: {
-          create: orders.map((o: { clientId: string; packageCount: number; description?: string }) => ({
+          create: orders.map((o: { clientId: string; packageCount: number; price?: number; description?: string }) => ({
             clientId: o.clientId,
             packageCount: o.packageCount,
+            price: o.price || null,
             description: o.description || null,
           })),
         },

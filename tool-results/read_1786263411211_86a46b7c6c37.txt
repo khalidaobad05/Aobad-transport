@@ -1,0 +1,926 @@
+     1→'use client';
+     2→
+     3→import { useState, useEffect, useCallback, useRef } from 'react';
+     4→import { toast } from 'sonner';
+     5→import { Plus, Pencil, Trash2, Loader2, Search, X, Package, ChevronDown, ChevronUp, UserPlus, Check } from 'lucide-react';
+     6→import { Button } from '@/components/ui/button';
+     7→import { Input } from '@/components/ui/input';
+     8→import { Label } from '@/components/ui/label';
+     9→import { Badge } from '@/components/ui/badge';
+    10→import { Skeleton } from '@/components/ui/skeleton';
+    11→import {
+    12→  Select,
+    13→  SelectContent,
+    14→  SelectItem,
+    15→  SelectTrigger,
+    16→  SelectValue,
+    17→} from '@/components/ui/select';
+    18→import {
+    19→  Dialog,
+    20→  DialogContent,
+    21→  DialogHeader,
+    22→  DialogTitle,
+    23→  DialogFooter,
+    24→} from '@/components/ui/dialog';
+    25→import {
+    26→  Table,
+    27→  TableBody,
+    28→  TableCell,
+    29→  TableHead,
+    30→  TableHeader,
+    31→  TableRow,
+    32→} from '@/components/ui/table';
+    33→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+    34→
+    35→interface Client {
+    36→  id: string;
+    37→  name: string;
+    38→}
+    39→
+    40→interface Vehicle {
+    41→  id: string;
+    42→  registration: string;
+    43→  driverName: string;
+    44→  ownerName: string;
+    45→}
+    46→
+    47→interface OrderItem {
+    48→  id?: string;
+    49→  clientId: string;
+    50→  clientName: string; // for display; can be new name or existing name
+    51→  packageCount: number;
+    52→  description: string;
+    53→  client?: Client;
+    54→}
+    55→
+    56→interface Shipment {
+    57→  id: string;
+    58→  number: number;
+    59→  date: string;
+    60→  status: string;
+    61→  description: string | null;
+    62→  vehicle: Vehicle;
+    63→  orders: (OrderItem & { id: string; client: Client })[];
+    64→}
+    65→
+    66→interface ShipmentFormData {
+    67→  date: string;
+    68→  vehicleId: string;
+    69→  description: string;
+    70→  status: string;
+    71→  orders: OrderItem[];
+    72→}
+    73→
+    74→const STATUS_OPTIONS = [
+    75→  { value: 'الكل', label: 'الكل' },
+    76→  { value: 'تم التسليم', label: 'تم التسليم' },
+    77→  { value: 'قيد التوصيل', label: 'قيد التوصيل' },
+    78→  { value: 'ملغاة', label: 'ملغاة' },
+    79→];
+    80→
+    81→const STATUS_FORM_OPTIONS = [
+    82→  { value: 'قيد التوصيل', label: 'قيد التوصيل' },
+    83→  { value: 'تم التسليم', label: 'تم التسليم' },
+    84→  { value: 'ملغاة', label: 'ملغاة' },
+    85→];
+    86→
+    87→const emptyOrder: OrderItem = {
+    88→  clientId: '',
+    89→  clientName: '',
+    90→  packageCount: 0,
+    91→  description: '',
+    92→};
+    93→
+    94→const emptyForm: ShipmentFormData = {
+    95→  date: '',
+    96→  vehicleId: '',
+    97→  description: '',
+    98→  status: 'قيد التوصيل',
+    99→  orders: [{ ...emptyOrder }],
+   100→};
+   101→
+   102→function formatDate(dateStr: string): string {
+   103→  const d = new Date(dateStr);
+   104→  const y = d.getFullYear();
+   105→  const m = String(d.getMonth() + 1).padStart(2, '0');
+   106→  const day = String(d.getDate()).padStart(2, '0');
+   107→  return `${y}/${m}/${day}`;
+   108→}
+   109→
+   110→function formatDateInput(dateStr: string): string {
+   111→  const d = new Date(dateStr);
+   112→  const y = d.getFullYear();
+   113→  const m = String(d.getMonth() + 1).padStart(2, '0');
+   114→  const day = String(d.getDate()).padStart(2, '0');
+   115→  return `${y}-${m}-${day}`;
+   116→}
+   117→
+   118→function getStatusBadge(status: string) {
+   119→  switch (status) {
+   120→    case 'تم التسليم':
+   121→      return (
+   122→        <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-0">
+   123→          تم التسليم
+   124→        </Badge>
+   125→      );
+   126→    case 'قيد التوصيل':
+   127→      return (
+   128→        <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-0">
+   129→          قيد التوصيل
+   130→        </Badge>
+   131→      );
+   132→    case 'ملغاة':
+   133→      return (
+   134→        <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-0">
+   135→          ملغاة
+   136→        </Badge>
+   137→      );
+   138→    default:
+   139→      return <Badge variant="secondary">{status}</Badge>;
+   140→  }
+   141→}
+   142→
+   143→// ========== Client Autocomplete Input ==========
+   144→function ClientAutocomplete({
+   145→  value,
+   146→  onChange,
+   147→  clients,
+   148→}: {
+   149→  value: string;
+   150→  onChange: (clientId: string, clientName: string) => void;
+   151→  clients: Client[];
+   152→}) {
+   153→  const [inputValue, setInputValue] = useState(value);
+   154→  const [isOpen, setIsOpen] = useState(false);
+   155→  const [highlightIndex, setHighlightIndex] = useState(-1);
+   156→  const wrapperRef = useRef<HTMLDivElement>(null);
+   157→  const inputRef = useRef<HTMLInputElement>(null);
+   158→
+   159→  // Sync external value changes (e.g. edit mode)
+   160→  useEffect(() => {
+   161→    setInputValue(value);
+   162→  }, [value]);
+   163→
+   164→  // Close dropdown on outside click
+   165→  useEffect(() => {
+   166→    function handleClickOutside(e: MouseEvent) {
+   167→      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+   168→        setIsOpen(false);
+   169→      }
+   170→    }
+   171→    document.addEventListener('mousedown', handleClickOutside);
+   172→    return () => document.removeEventListener('mousedown', handleClickOutside);
+   173→  }, []);
+   174→
+   175→  // Filter clients based on input
+   176→  const filteredClients = inputValue.trim()
+   177→    ? clients.filter((c) =>
+   178→        c.name.toLowerCase().includes(inputValue.trim().toLowerCase())
+   179→      )
+   180→    : clients;
+   181→
+   182→  // Show top 8 results
+   183→  const shownClients = filteredClients.slice(0, 8);
+   184→
+   185→  // Check if input exactly matches an existing client
+   186→  const exactMatch = clients.find(
+   187→    (c) => c.name.toLowerCase() === inputValue.trim().toLowerCase()
+   188→  );
+   189→
+   190→  const isNewClient = inputValue.trim().length > 0 && !exactMatch;
+   191→
+   192→  function handleSelect(client: Client) {
+   193→    setInputValue(client.name);
+   194→    onChange(client.id, client.name);
+   195→    setIsOpen(false);
+   196→    setHighlightIndex(-1);
+   197→  }
+   198→
+   199→  function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+   200→    const val = e.target.value;
+   201→    setInputValue(val);
+   202→    onChange('', val); // Clear clientId while typing
+   203→    setIsOpen(true);
+   204→    setHighlightIndex(-1);
+   205→  }
+   206→
+   207→  function handleAddNew() {
+   208→    if (!inputValue.trim()) return;
+   209→    // clientId stays empty - will be resolved on submit
+   210→    onChange('', inputValue.trim());
+   211→    setIsOpen(false);
+   212→  }
+   213→
+   214→  function handleKeyDown(e: React.KeyboardEvent) {
+   215→    const totalItems = shownClients.length + (isNewClient ? 1 : 0);
+   216→
+   217→    if (e.key === 'ArrowDown') {
+   218→      e.preventDefault();
+   219→      setHighlightIndex((prev) => (prev < totalItems - 1 ? prev + 1 : 0));
+   220→    } else if (e.key === 'ArrowUp') {
+   221→      e.preventDefault();
+   222→      setHighlightIndex((prev) => (prev > 0 ? prev - 1 : totalItems - 1));
+   223→    } else if (e.key === 'Enter') {
+   224→      e.preventDefault();
+   225→      if (highlightIndex >= 0 && highlightIndex < shownClients.length) {
+   226→        handleSelect(shownClients[highlightIndex]);
+   227→      } else if (highlightIndex === shownClients.length && isNewClient) {
+   228→        handleAddNew();
+   229→      }
+   230→    } else if (e.key === 'Escape') {
+   231→      setIsOpen(false);
+   232→    } else if (e.key === 'Tab') {
+   233→      // If there's exactly one match, select it
+   234→      if (shownClients.length === 1 && !isNewClient) {
+   235→        e.preventDefault();
+   236→        handleSelect(shownClients[0]);
+   237→      } else if (exactMatch) {
+   238→        e.preventDefault();
+   239→        handleSelect(exactMatch);
+   240→      }
+   241→    }
+   242→  }
+   243→
+   244→  return (
+   245→    <div ref={wrapperRef} className="relative">
+   246→      <div className="relative">
+   247→        <Input
+   248→          ref={inputRef}
+   249→          type="text"
+   250→          value={inputValue}
+   251→          onChange={handleInputChange}
+   252→          onFocus={() => setIsOpen(true)}
+   253→          onKeyDown={handleKeyDown}
+   254→          placeholder="اكتب اسم الزبون..."
+   255→          className="w-full pr-8"
+   256→          autoComplete="off"
+   257→        />
+   258→        {inputValue && (
+   259→          <button
+   260→            type="button"
+   261→            onClick={() => {
+   262→              setInputValue('');
+   263→              onChange('', '');
+   264→              inputRef.current?.focus();
+   265→            }}
+   266→            className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+   267→          >
+   268→            <X className="size-3.5" />
+   269→          </button>
+   270→        )}
+   271→      </div>
+   272→
+   273→      {/* Dropdown */}
+   274→      {isOpen && (shownClients.length > 0 || isNewClient) && (
+   275→        <div className="absolute z-50 top-full mt-1 w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+   276→          {shownClients.map((client, idx) => (
+   277→            <button
+   278→              key={client.id}
+   279→              type="button"
+   280→              onClick={() => handleSelect(client)}
+   281→              onMouseEnter={() => setHighlightIndex(idx)}
+   282→              className={`
+   283→                w-full text-right px-3 py-2 text-sm flex items-center gap-2 transition-colors
+   284→                ${idx === highlightIndex
+   285→                  ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-900 dark:text-amber-100'
+   286→                  : 'hover:bg-gray-50 dark:hover:bg-gray-800'
+   287→                }
+   288→              `}
+   289→            >
+   290→              <span className="truncate flex-1">{client.name}</span>
+   291→              {exactMatch?.id === client.id && (
+   292→                <Check className="size-3.5 text-emerald-500 shrink-0" />
+   293→              )}
+   294→            </button>
+   295→          ))}
+   296→          {isNewClient && (
+   297→            <button
+   298→              type="button"
+   299→              onClick={handleAddNew}
+   300→              onMouseEnter={() => setHighlightIndex(shownClients.length)}
+   301→              className={`
+   302→                w-full text-right px-3 py-2 text-sm flex items-center gap-2 border-t border-gray-100 dark:border-gray-800 transition-colors
+   303→                ${highlightIndex === shownClients.length
+   304→                  ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300'
+   305→                  : 'hover:bg-gray-50 dark:hover:bg-gray-800 text-emerald-600 dark:text-emerald-400'
+   306→                }
+   307→              `}
+   308→            >
+   309→              <UserPlus className="size-3.5 shrink-0" />
+   310→              <span>إضافة &quot;{inputValue.trim()}&quot; كزبون جديد</span>
+   311→            </button>
+   312→          )}
+   313→        </div>
+   314→      )}
+   315→
+   316→      {/* Hidden indicator: if value has clientId it's an existing client */}
+   317→      {!exactMatch && inputValue.trim() && (
+   318→        <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1">
+   319→          <UserPlus className="size-3" />
+   320→          سيتم إضافة &quot;{inputValue.trim()}&quot; إلى لائحة الزبائن
+   321→        </p>
+   322→      )}
+   323→    </div>
+   324→  );
+   325→}
+   326→
+   327→// ========== Main Component ==========
+   328→export default function ShipmentsManager() {
+   329→  const [shipments, setShipments] = useState<Shipment[]>([]);
+   330→  const [loading, setLoading] = useState(true);
+   331→  const [dialogOpen, setDialogOpen] = useState(false);
+   332→  const [editingShipment, setEditingShipment] = useState<Shipment | null>(null);
+   333→  const [form, setForm] = useState<ShipmentFormData>(emptyForm);
+   334→  const [submitting, setSubmitting] = useState(false);
+   335→  const [deletingId, setDeletingId] = useState<string | null>(null);
+   336→  const [expandedShipment, setExpandedShipment] = useState<string | null>(null);
+   337→
+   338→  // Reference data
+   339→  const [clients, setClients] = useState<Client[]>([]);
+   340→  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+   341→
+   342→  // Filter state
+   343→  const [filterDate, setFilterDate] = useState('');
+   344→  const [filterStatus, setFilterStatus] = useState('الكل');
+   345→  const [filterVehicleId, setFilterVehicleId] = useState('');
+   346→
+   347→  const fetchShipments = useCallback(async () => {
+   348→    try {
+   349→      setLoading(true);
+   350→      const params = new URLSearchParams();
+   351→      if (filterDate) params.set('date', filterDate);
+   352→      if (filterStatus && filterStatus !== 'الكل') params.set('status', filterStatus);
+   353→      if (filterVehicleId && filterVehicleId !== 'all') params.set('vehicleId', filterVehicleId);
+   354→
+   355→      const res = await fetch(`/api/shipments?${params.toString()}`);
+   356→      if (!res.ok) throw new Error('فشل في تحميل الشحنات');
+   357→      const json = await res.json();
+   358→      setShipments(Array.isArray(json) ? json : json.data ?? []);
+   359→    } catch (err) {
+   360→      toast.error(
+   361→        err instanceof Error ? err.message : 'حدث خطأ أثناء تحميل الشحنات'
+   362→      );
+   363→    } finally {
+   364→      setLoading(false);
+   365→    }
+   366→  }, [filterDate, filterStatus, filterVehicleId]);
+   367→
+   368→  const fetchClients = useCallback(async () => {
+   369→    try {
+   370→      const res = await fetch('/api/clients');
+   371→      if (!res.ok) return;
+   372→      const json = await res.json();
+   373→      setClients(Array.isArray(json) ? json : json.data ?? []);
+   374→    } catch {
+   375→      // silently fail
+   376→    }
+   377→  }, []);
+   378→
+   379→  const fetchVehicles = useCallback(async () => {
+   380→    try {
+   381→      const res = await fetch('/api/vehicles');
+   382→      if (!res.ok) return;
+   383→      const json = await res.json();
+   384→      setVehicles(Array.isArray(json) ? json : json.data ?? []);
+   385→    } catch {
+   386→      // silently fail
+   387→    }
+   388→  }, []);
+   389→
+   390→  useEffect(() => {
+   391→    fetchShipments();
+   392→  }, [fetchShipments]);
+   393→
+   394→  useEffect(() => {
+   395→    fetchClients();
+   396→    fetchVehicles();
+   397→  }, [fetchClients, fetchVehicles]);
+   398→
+   399→  function openCreateDialog() {
+   400→    setEditingShipment(null);
+   401→    setForm(emptyForm);
+   402→    setDialogOpen(true);
+   403→  }
+   404→
+   405→  function openEditDialog(shipment: Shipment) {
+   406→    setEditingShipment(shipment);
+   407→    setForm({
+   408→      date: formatDateInput(shipment.date),
+   409→      vehicleId: shipment.vehicle.id,
+   410→      description: shipment.description ?? '',
+   411→      status: shipment.status,
+   412→      orders: shipment.orders.map((o) => ({
+   413→        id: o.id,
+   414→        clientId: o.client.id,
+   415→        clientName: o.client.name,
+   416→        packageCount: o.packageCount,
+   417→        description: o.description ?? '',
+   418→      })),
+   419→    });
+   420→    setDialogOpen(true);
+   421→  }
+   422→
+   423→  // Order management within the form
+   424→  function addOrder() {
+   425→    setForm({ ...form, orders: [...form.orders, { ...emptyOrder }] });
+   426→  }
+   427→
+   428→  function removeOrder(index: number) {
+   429→    if (form.orders.length <= 1) {
+   430→      toast.error('يجب أن تحتوي الشحنة على طلبية واحدة على الأقل');
+   431→      return;
+   432→    }
+   433→    const newOrders = form.orders.filter((_, i) => i !== index);
+   434→    setForm({ ...form, orders: newOrders });
+   435→  }
+   436→
+   437→  function updateOrderClient(index: number, clientId: string, clientName: string) {
+   438→    const newOrders = [...form.orders];
+   439→    newOrders[index] = { ...newOrders[index], clientId, clientName };
+   440→    setForm({ ...form, orders: newOrders });
+   441→  }
+   442→
+   443→  function updateOrderField(index: number, field: 'packageCount' | 'description', value: string | number) {
+   444→    const newOrders = [...form.orders];
+   445→    (newOrders[index] as Record<string, unknown>)[field] = value;
+   446→    setForm({ ...form, orders: newOrders });
+   447→  }
+   448→
+   449→  // Ensure a client exists (find or create), returns the client ID
+   450→  async function ensureClient(name: string): Promise<string | null> {
+   451→    try {
+   452→      const res = await fetch('/api/clients/ensure', {
+   453→        method: 'POST',
+   454→        headers: { 'Content-Type': 'application/json' },
+   455→        body: JSON.stringify({ name }),
+   456→      });
+   457→      if (!res.ok) return null;
+   458→      const json = await res.json();
+   459→      // Refresh clients list to include any newly created
+   460→      if (json.created) {
+   461→        fetchClients();
+   462→      }
+   463→      return json.data.id;
+   464→    } catch {
+   465→      return null;
+   466→    }
+   467→  }
+   468→
+   469→  async function handleSubmit(e: React.FormEvent) {
+   470→    e.preventDefault();
+   471→    if (!form.date) {
+   472→      toast.error('التاريخ مطلوب');
+   473→      return;
+   474→    }
+   475→    if (!form.vehicleId) {
+   476→      toast.error('المركبة مطلوبة');
+   477→      return;
+   478→    }
+   479→
+   480→    // Validate orders - each must have a client name and package count
+   481→    const validOrders = form.orders.filter(
+   482→      (o) => o.clientName.trim() && o.packageCount > 0
+   483→    );
+   484→    if (validOrders.length === 0) {
+   485→      toast.error('يجب إضافة طلبية واحدة صالحة على الأقل (اسم الزبون وعدد الطرود)');
+   486→      return;
+   487→    }
+   488→
+   489→    try {
+   490→      setSubmitting(true);
+   491→
+   492→      // Step 1: Ensure all clients exist (resolve or create)
+   493→      const resolvedOrders = await Promise.all(
+   494→        validOrders.map(async (o) => {
+   495→          let clientId = o.clientId;
+   496→          // If no clientId, the client might be new - ensure it exists
+   497→          if (!clientId) {
+   498→            clientId = (await ensureClient(o.clientName.trim())) || '';
+   499→          }
+   500→          return {
+   501→            clientId,
+   502→            packageCount: o.packageCount,
+   503→            description: o.description?.trim() || undefined,
+   504→          };
+   505→        })
+   506→      );
+   507→
+   508→      // Validate all clients were resolved
+   509→      const unresolved = resolvedOrders.find((o) => !o.clientId);
+   510→      if (unresolved) {
+   511→        throw new Error('فشل في تسجيل أحد الزبائن');
+   512→      }
+   513→
+   514→      // Step 2: Create/update the shipment
+   515→      const body = {
+   516→        date: form.date,
+   517→        vehicleId: form.vehicleId,
+   518→        description: form.description.trim() || undefined,
+   519→        status: form.status,
+   520→        orders: resolvedOrders,
+   521→      };
+   522→
+   523→      if (editingShipment) {
+   524→        const res = await fetch(`/api/shipments/${editingShipment.id}`, {
+   525→          method: 'PUT',
+   526→          headers: { 'Content-Type': 'application/json' },
+   527→          body: JSON.stringify(body),
+   528→        });
+   529→        if (!res.ok) throw new Error('فشل في تحديث الشحنة');
+   530→        toast.success('تم تحديث الشحنة بنجاح');
+   531→      } else {
+   532→        const res = await fetch('/api/shipments', {
+   533→          method: 'POST',
+   534→          headers: { 'Content-Type': 'application/json' },
+   535→          body: JSON.stringify(body),
+   536→        });
+   537→        if (!res.ok) throw new Error('فشل في إضافة الشحنة');
+   538→        toast.success('تم إضافة الشحنة بنجاح');
+   539→      }
+   540→
+   541→      setDialogOpen(false);
+   542→      fetchShipments();
+   543→    } catch (err) {
+   544→      toast.error(err instanceof Error ? err.message : 'حدث خطأ غير متوقع');
+   545→    } finally {
+   546→      setSubmitting(false);
+   547→    }
+   548→  }
+   549→
+   550→  async function handleDelete(id: string) {
+   551→    try {
+   552→      setDeletingId(id);
+   553→      const res = await fetch(`/api/shipments/${id}`, { method: 'DELETE' });
+   554→      if (!res.ok) throw new Error('فشل في حذف الشحنة');
+   555→      toast.success('تم حذف الشحنة بنجاح');
+   556→      fetchShipments();
+   557→    } catch (err) {
+   558→      toast.error(err instanceof Error ? err.message : 'حدث خطأ أثناء الحذف');
+   559→    } finally {
+   560→      setDeletingId(null);
+   561→    }
+   562→  }
+   563→
+   564→  function handleClearFilters() {
+   565→    setFilterDate('');
+   566→    setFilterStatus('الكل');
+   567→    setFilterVehicleId('');
+   568→  }
+   569→
+   570→  function handleSearch() {
+   571→    fetchShipments();
+   572→  }
+   573→
+   574→  function getTotalPackages(shipment: Shipment): number {
+   575→    return shipment.orders.reduce((sum, o) => sum + o.packageCount, 0);
+   576→  }
+   577→
+   578→  return (
+   579→    <div className="space-y-6">
+   580→      {/* Filter Bar */}
+   581→      <Card className="bg-white dark:bg-gray-900 border shadow-sm">
+   582→        <CardContent className="p-4">
+   583→          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+   584→            <div className="space-y-2">
+   585→              <Label htmlFor="filter-date" className="text-sm">التاريخ</Label>
+   586→              <Input
+   587→                id="filter-date"
+   588→                type="date"
+   589→                value={filterDate}
+   590→                onChange={(e) => setFilterDate(e.target.value)}
+   591→                className="w-full"
+   592→              />
+   593→            </div>
+   594→            <div className="space-y-2">
+   595→              <Label className="text-sm">الحالة</Label>
+   596→              <Select value={filterStatus} onValueChange={setFilterStatus}>
+   597→                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+   598→                <SelectContent>
+   599→                  {STATUS_OPTIONS.map((opt) => (
+   600→                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+   601→                  ))}
+   602→                </SelectContent>
+   603→              </Select>
+   604→            </div>
+   605→            <div className="space-y-2">
+   606→              <Label className="text-sm">المركبة</Label>
+   607→              <Select value={filterVehicleId || 'all'} onValueChange={(v) => setFilterVehicleId(v === 'all' ? '' : v)}>
+   608→                <SelectTrigger className="w-full"><SelectValue placeholder="الكل" /></SelectTrigger>
+   609→                <SelectContent>
+   610→                  <SelectItem value="all">الكل</SelectItem>
+   611→                  {vehicles.map((v) => (
+   612→                    <SelectItem key={v.id} value={v.id}>
+   613→                      {v.registration} - {v.driverName}
+   614→                    </SelectItem>
+   615→                  ))}
+   616→                </SelectContent>
+   617→              </Select>
+   618→            </div>
+   619→            <div className="flex items-end gap-2">
+   620→              <Button onClick={handleSearch} className="bg-amber-500 hover:bg-amber-600 text-white flex-1">
+   621→                <Search className="size-4" />
+   622→                بحث
+   623→              </Button>
+   624→              <Button variant="outline" onClick={handleClearFilters} className="flex-1">
+   625→                <X className="size-4" />
+   626→                مسح
+   627→              </Button>
+   628→            </div>
+   629→          </div>
+   630→        </CardContent>
+   631→      </Card>
+   632→
+   633→      {/* Header with Add Button */}
+   634→      <div className="flex items-center justify-between">
+   635→        <Button onClick={openCreateDialog} className="bg-amber-500 hover:bg-amber-600 text-white">
+   636→          <Plus className="size-4" />
+   637→          إضافة شحنة
+   638→        </Button>
+   639→      </div>
+   640→
+   641→      {/* Shipments Table */}
+   642→      <Card className="bg-white dark:bg-gray-900 border shadow-sm">
+   643→        <CardHeader className="p-4 pb-0">
+   644→          <CardTitle className="text-lg">الشحنات</CardTitle>
+   645→        </CardHeader>
+   646→        <CardContent className="p-0">
+   647→          {loading ? (
+   648→            <div className="p-6 space-y-3">
+   649→              {Array.from({ length: 5 }).map((_, i) => (
+   650→                <Skeleton key={i} className="h-10 w-full" />
+   651→              ))}
+   652→            </div>
+   653→          ) : shipments.length > 0 ? (
+   654→            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+   655→              <Table>
+   656→                <TableHeader>
+   657→                  <TableRow>
+   658→                    <TableHead>رقم الشحنة</TableHead>
+   659→                    <TableHead>التاريخ</TableHead>
+   660→                    <TableHead>المركبة</TableHead>
+   661→                    <TableHead>الصاحب</TableHead>
+   662→                    <TableHead>عدد الطلبيات</TableHead>
+   663→                    <TableHead>إجمالي الطرود</TableHead>
+   664→                    <TableHead>الحالة</TableHead>
+   665→                    <TableHead>الإجراءات</TableHead>
+   666→                  </TableRow>
+   667→                </TableHeader>
+   668→                <TableBody>
+   669→                  {shipments.map((shipment) => {
+   670→                    const isExpanded = expandedShipment === shipment.id;
+   671→                    const totalPkgs = getTotalPackages(shipment);
+   672→                    return (
+   673→                      <>
+   674→                        <TableRow
+   675→                          key={shipment.id}
+   676→                          className="cursor-pointer hover:bg-amber-50/50 dark:hover:bg-amber-900/10"
+   677→                          onClick={() => setExpandedShipment(isExpanded ? null : shipment.id)}
+   678→                        >
+   679→                          <TableCell className="font-medium">{shipment.number}</TableCell>
+   680→                          <TableCell>{formatDate(shipment.date)}</TableCell>
+   681→                          <TableCell>{shipment.vehicle.registration}</TableCell>
+   682→                          <TableCell>
+   683→                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+   684→                              {shipment.vehicle.ownerName}
+   685→                            </span>
+   686→                          </TableCell>
+   687→                          <TableCell>
+   688→                            <div className="flex items-center gap-1">
+   689→                              <Package className="size-3.5 text-muted-foreground" />
+   690→                              <span className="font-semibold">{shipment.orders.length}</span>
+   691→                            </div>
+   692→                          </TableCell>
+   693→                          <TableCell className="font-bold text-lg">{totalPkgs}</TableCell>
+   694→                          <TableCell>{getStatusBadge(shipment.status)}</TableCell>
+   695→                          <TableCell>
+   696→                            <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+   697→                              <Button
+   698→                                variant="ghost"
+   699→                                size="icon"
+   700→                                onClick={() => openEditDialog(shipment)}
+   701→                                className="text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+   702→                                title="تعديل"
+   703→                              >
+   704→                                <Pencil className="size-4" />
+   705→                              </Button>
+   706→                              <Button
+   707→                                variant="ghost"
+   708→                                size="icon"
+   709→                                onClick={() => handleDelete(shipment.id)}
+   710→                                disabled={deletingId === shipment.id}
+   711→                                className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+   712→                                title="حذف"
+   713→                              >
+   714→                                {deletingId === shipment.id ? (
+   715→                                  <Loader2 className="size-4 animate-spin" />
+   716→                                ) : (
+   717→                                  <Trash2 className="size-4" />
+   718→                                )}
+   719→                              </Button>
+   720→                            </div>
+   721→                          </TableCell>
+   722→                        </TableRow>
+   723→                        {/* Expanded: show orders detail */}
+   724→                        {isExpanded && (
+   725→                          <TableRow key={`${shipment.id}-orders`}>
+   726→                            <TableCell colSpan={8} className="bg-amber-50/30 dark:bg-amber-900/10 px-8 py-4">
+   727→                              <div className="space-y-2">
+   728→                                <p className="text-sm font-semibold text-amber-700 dark:text-amber-400 mb-2">
+   729→                                  تفاصيل الطلبيات ({shipment.orders.length})
+   730→                                </p>
+   731→                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+   732→                                  {shipment.orders.map((order, oi) => (
+   733→                                    <div
+   734→                                      key={order.id}
+   735→                                      className="border rounded-lg p-3 bg-white dark:bg-gray-800"
+   736→                                    >
+   737→                                      <div className="flex items-center justify-between mb-1">
+   738→                                        <span className="text-xs text-muted-foreground">طلبية {oi + 1}</span>
+   739→                                        <Badge variant="secondary" className="text-xs">
+   740→                                          {order.packageCount} طرود
+   741→                                        </Badge>
+   742→                                      </div>
+   743→                                      <p className="font-semibold text-sm">{order.client.name}</p>
+   744→                                      {order.description && (
+   745→                                        <p className="text-xs text-muted-foreground mt-1">{order.description}</p>
+   746→                                      )}
+   747→                                    </div>
+   748→                                  ))}
+   749→                                </div>
+   750→                              </div>
+   751→                            </TableCell>
+   752→                          </TableRow>
+   753→                        )}
+   754→                      </>
+   755→                    );
+   756→                  })}
+   757→                </TableBody>
+   758→              </Table>
+   759→            </div>
+   760→          ) : (
+   761→            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+   762→              <p className="text-base">لا توجد شحنات</p>
+   763→              <p className="text-sm mt-1">
+   764→                اضغط على &quot;إضافة شحنة&quot; لإضافة شحنة جديدة
+   765→              </p>
+   766→            </div>
+   767→          )}
+   768→        </CardContent>
+   769→      </Card>
+   770→
+   771→      {/* Create / Edit Dialog */}
+   772→      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+   773→        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+   774→          <DialogHeader>
+   775→            <DialogTitle>
+   776→              {editingShipment ? 'تعديل الشحنة' : 'إضافة شحنة جديدة'}
+   777→            </DialogTitle>
+   778→          </DialogHeader>
+   779→          <form onSubmit={handleSubmit} className="space-y-4">
+   780→            <div className="grid grid-cols-2 gap-4">
+   781→              <div className="space-y-2">
+   782→                <Label htmlFor="shipment-date">التاريخ <span className="text-red-500">*</span></Label>
+   783→                <Input
+   784→                  id="shipment-date"
+   785→                  type="date"
+   786→                  value={form.date}
+   787→                  onChange={(e) => setForm({ ...form, date: e.target.value })}
+   788→                  required
+   789→                />
+   790→              </div>
+   791→              <div className="space-y-2">
+   792→                <Label>المركبة <span className="text-red-500">*</span></Label>
+   793→                <Select
+   794→                  value={form.vehicleId}
+   795→                  onValueChange={(val) => setForm({ ...form, vehicleId: val })}
+   796→                >
+   797→                  <SelectTrigger className="w-full">
+   798→                    <SelectValue placeholder="اختر المركبة" />
+   799→                  </SelectTrigger>
+   800→                  <SelectContent>
+   801→                    {vehicles.map((v) => (
+   802→                      <SelectItem key={v.id} value={v.id}>
+   803→                        {v.registration} - {v.driverName} ({v.ownerName})
+   804→                      </SelectItem>
+   805→                    ))}
+   806→                  </SelectContent>
+   807→                </Select>
+   808→              </div>
+   809→            </div>
+   810→
+   811→            <div className="grid grid-cols-2 gap-4">
+   812→              <div className="space-y-2">
+   813→                <Label>حالة الشحنة</Label>
+   814→                <Select
+   815→                  value={form.status}
+   816→                  onValueChange={(val) => setForm({ ...form, status: val })}
+   817→                >
+   818→                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+   819→                  <SelectContent>
+   820→                    {STATUS_FORM_OPTIONS.map((opt) => (
+   821→                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+   822→                    ))}
+   823→                  </SelectContent>
+   824→                </Select>
+   825→              </div>
+   826→              <div className="space-y-2">
+   827→                <Label htmlFor="shipment-desc">وصف الشحنة</Label>
+   828→                <Input
+   829→                  id="shipment-desc"
+   830→                  value={form.description}
+   831→                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+   832→                  placeholder="مثال: رحلة الدار البيضاء - الرباط"
+   833→                />
+   834→              </div>
+   835→            </div>
+   836→
+   837→            {/* Orders Section */}
+   838→            <div className="space-y-3">
+   839→              <div className="flex items-center justify-between">
+   840→                <Label className="text-base font-bold">الطلبيات <span className="text-red-500">*</span></Label>
+   841→                <Button type="button" variant="outline" size="sm" onClick={addOrder}>
+   842→                  <Plus className="size-3.5 ml-1" />
+   843→                  إضافة طلبية
+   844→                </Button>
+   845→              </div>
+   846→
+   847→              {form.orders.map((order, index) => (
+   848→                <div
+   849→                  key={index}
+   850→                  className="border rounded-lg p-3 space-y-3 bg-muted/30"
+   851→                >
+   852→                  <div className="flex items-center justify-between">
+   853→                    <span className="text-sm font-semibold text-amber-700 dark:text-amber-400">
+   854→                      طلبية {index + 1}
+   855→                    </span>
+   856→                    {form.orders.length > 1 && (
+   857→                      <Button
+   858→                        type="button"
+   859→                        variant="ghost"
+   860→                        size="icon"
+   861→                        className="size-7 text-red-500 hover:text-red-700"
+   862→                        onClick={() => removeOrder(index)}
+   863→                      >
+   864→                        <Trash2 className="size-3.5" />
+   865→                      </Button>
+   866→                    )}
+   867→                  </div>
+   868→                  <div className="space-y-1">
+   869→                    <Label className="text-xs">اسم الزبون <span className="text-red-500">*</span></Label>
+   870→                    <ClientAutocomplete
+   871→                      value={order.clientName}
+   872→                      onChange={(clientId, clientName) =>
+   873→                        updateOrderClient(index, clientId, clientName)
+   874→                      }
+   875→                      clients={clients}
+   876→                    />
+   877→                  </div>
+   878→                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+   879→                    <div className="space-y-1">
+   880→                      <Label className="text-xs">عدد الطرود <span className="text-red-500">*</span></Label>
+   881→                      <Input
+   882→                        type="number"
+   883→                        min={1}
+   884→                        value={order.packageCount || ''}
+   885→                        onChange={(e) => updateOrderField(index, 'packageCount', parseInt(e.target.value) || 0)}
+   886→                        placeholder="عدد الطرود"
+   887→                      />
+   888→                    </div>
+   889→                    <div className="space-y-1">
+   890→                      <Label className="text-xs">وصف (اختياري)</Label>
+   891→                      <Input
+   892→                        value={order.description}
+   893→                        onChange={(e) => updateOrderField(index, 'description', e.target.value)}
+   894→                        placeholder="وصف الطلبية"
+   895→                      />
+   896→                    </div>
+   897→                  </div>
+   898→                </div>
+   899→              ))}
+   900→            </div>
+   901→
+   902→            <DialogFooter>
+   903→              <Button
+   904→                type="button"
+   905→                variant="outline"
+   906→                onClick={() => setDialogOpen(false)}
+   907→                disabled={submitting}
+   908→              >
+   909→                إلغاء
+   910→              </Button>
+   911→              <Button
+   912→                type="submit"
+   913→                disabled={submitting}
+   914→                className="bg-amber-500 hover:bg-amber-600 text-white"
+   915→              >
+   916→                {submitting && <Loader2 className="size-4 animate-spin" />}
+   917→                {editingShipment ? 'تحديث' : 'إضافة'}
+   918→              </Button>
+   919→            </DialogFooter>
+   920→          </form>
+   921→        </DialogContent>
+   922→      </Dialog>
+   923→    </div>
+   924→  );
+   925→}
+   926→

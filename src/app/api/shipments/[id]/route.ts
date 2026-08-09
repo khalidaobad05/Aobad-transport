@@ -67,6 +67,7 @@ export async function PUT(
               shipmentId: id,
               clientId: o.clientId,
               packageCount: o.packageCount,
+              price: o.price || null,
               description: o.description || null,
             },
           })
